@@ -1,0 +1,20 @@
+{
+  "name": "savelock",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "node scripts/generate-icons.mjs && astro build && node scripts/generate-sw.mjs",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.0",
+    "alpinejs": "^3.14.0",
+    "astro": "^5.0.0",
+    "tailwindcss": "^4.1.0"
+  },
+  "devDependencies": {
+    "sharp": "^0.35.3"
+  }
+}

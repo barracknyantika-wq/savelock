@@ -1,0 +1,14 @@
+# build output
+dist/
+# generated at build time by scripts/generate-icons.mjs
+public/icons/
+# generated types
+.astro/
+# dependencies
+node_modules/
+package-lock.json
+# environment variables
+.env
+.env.production
+# macOS-specific files
+.DS_Store

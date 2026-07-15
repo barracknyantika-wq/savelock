@@ -1,0 +1,99 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title?: string;
+  tab?: 'today' | 'goals' | 'settings';
+}
+
+const { title = 'SaveLock', tab = 'today' } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
+
+const tabs = [
+  { id: 'today', href: `${base}/`, label: 'Today' },
+  { id: 'goals', href: `${base}/goals/`, label: 'Goals' },
+  { id: 'settings', href: `${base}/settings/`, label: 'Settings' },
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{title}</title>
+    <meta
+      name="description"
+      content="A discipline layer for your savings. Holds no money — just keeps score."
+    />
+    <link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
+    <link rel="apple-touch-icon" href={`${base}/icons/apple-touch-icon.png`} />
+    <link rel="manifest" href={`${base}/manifest.webmanifest`} />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fafaf9" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0c0a09" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="SaveLock" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  </head>
+  <body
+    class="min-h-dvh bg-stone-50 font-sans text-stone-900 antialiased dark:bg-stone-950 dark:text-stone-100"
+  >
+    <slot />
+
+    <nav
+      class="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-stone-800 dark:bg-stone-900/95"
+      aria-label="Main"
+    >
+      <div class="mx-auto grid max-w-md grid-cols-3">
+        {
+          tabs.map((t) => (
+            <a
+              href={t.href}
+              aria-current={t.id === tab ? 'page' : undefined}
+              class:list={[
+                'flex min-h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium',
+                t.id === tab
+                  ? 'text-teal-700 dark:text-teal-400'
+                  : 'text-stone-500 dark:text-stone-400',
+              ]}
+            >
+              {t.id === 'today' && (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="2.5" y="6" width="19" height="12" rx="2.5" />
+                  <circle cx="12" cy="12" r="2.4" />
+                  <path d="M6 12h.01M18 12h.01" />
+                </svg>
+              )}
+              {t.id === 'goals' && (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="5" y="10.5" width="14" height="9.5" rx="2.5" />
+                  <path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" />
+                  <circle cx="12" cy="15.2" r="1.4" fill="currentColor" stroke="none" />
+                </svg>
+              )}
+              {t.id === 'settings' && (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M4 7h16M4 12h16M4 17h16" />
+                  <circle cx="9" cy="7" r="2" fill="currentColor" stroke="none" />
+                  <circle cx="15" cy="12" r="2" fill="currentColor" stroke="none" />
+                  <circle cx="8" cy="17" r="2" fill="currentColor" stroke="none" />
+                </svg>
+              )}
+              <span>{t.label}</span>
+            </a>
+          ))
+        }
+      </div>
+    </nav>
+
+    <script src="../scripts/app.js"></script>
+    <script is:inline define:vars={{ swUrl: `${base}/sw.js`, prod: import.meta.env.PROD }}>
+      if (prod && 'serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register(swUrl).catch(() => {});
+        });
+      }
+    </script>
+  </body>
+</html>
