@@ -151,6 +151,25 @@ export function registerStore(Alpine) {
       return Math.max(0, Math.min(1, this.remaining / this.settings.dailyLimit));
     },
 
+    // Last 7 days (including today) for the little history chart.
+    get last7() {
+      const today = todayStr();
+      const byDate = Object.fromEntries(this.history.map((h) => [h.date, h]));
+      const out = [];
+      for (let i = 6; i >= 0; i--) {
+        const date = addDays(today, -i);
+        const isToday = date === today;
+        const h = byDate[date];
+        out.push({
+          label: toDate(date).toLocaleDateString('en-GB', { weekday: 'narrow' }),
+          spent: isToday ? this.spentToday : h ? h.spent : 0,
+          limit: isToday ? this.settings.dailyLimit : h ? h.limit : this.settings.dailyLimit,
+          today: isToday,
+        });
+      }
+      return out;
+    },
+
     setLimit(v) {
       this.settings.dailyLimit = v;
       this.persist();

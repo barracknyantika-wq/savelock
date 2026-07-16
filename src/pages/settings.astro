@@ -3,14 +3,14 @@ import Layout from '../layouts/Layout.astro';
 ---
 
 <Layout title="SaveLock — Settings" tab="settings">
-  <main x-data="settingsPage" class="mx-auto w-full max-w-md px-5 pb-36 pt-8">
-    <h1 class="mb-6 text-lg font-semibold tracking-tight">Settings</h1>
+  <main x-data="settingsPage" class="mx-auto w-full max-w-md px-5 pb-44 pt-7">
+    <h1 class="mb-7 px-1 font-display text-xl font-semibold tracking-tight text-cream">Settings</h1>
 
-    <div class="space-y-4">
+    <div class="space-y-5">
       <!-- Daily limit -->
-      <section class="rounded-2xl border border-stone-200 bg-white p-5 dark:border-stone-800 dark:bg-stone-900">
-        <h2 class="font-semibold">Daily limit</h2>
-        <p class="mt-1 text-sm text-stone-500 dark:text-stone-400">
+      <section class="paper rotate-[-0.8deg] p-5">
+        <h2 class="font-display text-lg font-semibold text-ink">Daily limit</h2>
+        <p class="mt-1 text-sm font-light text-ink-2">
           Applies from now on. Days already ended keep the limit they were judged against.
         </p>
         <form class="mt-3 flex gap-3" @submit.prevent="saveLimit">
@@ -23,11 +23,11 @@ import Layout from '../layouts/Layout.astro';
             min="1"
             step="any"
             placeholder="500"
-            class="min-h-12 w-full rounded-xl border border-stone-300 bg-white px-4 text-base outline-none focus:border-teal-600 dark:border-stone-700 dark:bg-stone-950 dark:focus:border-teal-400"
+            class="min-h-12 w-full rounded-xl border border-paper-line bg-paper-deep px-4 text-base text-ink outline-none placeholder:text-ink-3 focus:border-ochre-soft"
           />
           <button
             type="submit"
-            class="min-h-12 shrink-0 rounded-xl bg-teal-700 px-5 font-semibold text-white active:bg-teal-800 dark:bg-teal-500 dark:text-stone-950 dark:active:bg-teal-400"
+            class="pressable min-h-12 shrink-0 rounded-xl bg-ink px-5 font-semibold text-cream shadow-[0_3px_0_rgba(0,0,0,0.4)]"
           >
             Save
           </button>
@@ -35,9 +35,9 @@ import Layout from '../layouts/Layout.astro';
       </section>
 
       <!-- Currency label -->
-      <section class="rounded-2xl border border-stone-200 bg-white p-5 dark:border-stone-800 dark:bg-stone-900">
-        <h2 class="font-semibold">Currency label</h2>
-        <p class="mt-1 text-sm text-stone-500 dark:text-stone-400">
+      <section class="paper ml-3 rotate-[0.6deg] p-5">
+        <h2 class="font-display text-lg font-semibold text-ink">Currency label</h2>
+        <p class="mt-1 text-sm font-light text-ink-2">
           Just a label on the numbers — nothing is converted.
         </p>
         <form class="mt-3 flex gap-3" @submit.prevent="saveCurrency">
@@ -48,11 +48,11 @@ import Layout from '../layouts/Layout.astro';
             type="text"
             maxlength="6"
             placeholder="KSh"
-            class="min-h-12 w-full rounded-xl border border-stone-300 bg-white px-4 text-base outline-none focus:border-teal-600 dark:border-stone-700 dark:bg-stone-950 dark:focus:border-teal-400"
+            class="min-h-12 w-full rounded-xl border border-paper-line bg-paper-deep px-4 text-base text-ink outline-none placeholder:text-ink-3 focus:border-ochre-soft"
           />
           <button
             type="submit"
-            class="min-h-12 shrink-0 rounded-xl bg-teal-700 px-5 font-semibold text-white active:bg-teal-800 dark:bg-teal-500 dark:text-stone-950 dark:active:bg-teal-400"
+            class="pressable min-h-12 shrink-0 rounded-xl bg-ink px-5 font-semibold text-cream shadow-[0_3px_0_rgba(0,0,0,0.4)]"
           >
             Save
           </button>
@@ -60,9 +60,9 @@ import Layout from '../layouts/Layout.astro';
       </section>
 
       <!-- Backup -->
-      <section class="rounded-2xl border border-stone-200 bg-white p-5 dark:border-stone-800 dark:bg-stone-900">
-        <h2 class="font-semibold">Backup</h2>
-        <p class="mt-1 text-sm leading-relaxed text-stone-500 dark:text-stone-400">
+      <section class="paper mr-3 rotate-[-0.5deg] p-5">
+        <h2 class="font-display text-lg font-semibold text-ink">Backup</h2>
+        <p class="mt-1 text-sm font-light leading-relaxed text-ink-2">
           Everything lives only on this device. Export a file before clearing your browser
           or switching phones — import it to pick up where you left off.
         </p>
@@ -70,43 +70,41 @@ import Layout from '../layouts/Layout.astro';
           <button
             type="button"
             @click="exportBackup"
-            class="min-h-12 flex-1 rounded-xl border border-stone-300 font-semibold text-stone-700 active:bg-stone-100 dark:border-stone-700 dark:text-stone-200 dark:active:bg-stone-800"
+            class="chip pressable min-h-12 flex-1 rounded-xl font-semibold text-ink"
           >
             Export
           </button>
-          <label
-            class="flex min-h-12 flex-1 cursor-pointer items-center justify-center rounded-xl border border-stone-300 font-semibold text-stone-700 active:bg-stone-100 dark:border-stone-700 dark:text-stone-200 dark:active:bg-stone-800"
-          >
+          <label class="chip pressable flex min-h-12 flex-1 cursor-pointer items-center justify-center rounded-xl font-semibold text-ink">
             Import
             <input type="file" accept="application/json,.json" class="hidden" @change="importBackup($event)" />
           </label>
         </div>
-        <p x-show="importError" x-cloak class="mt-3 text-sm font-medium text-rose-600 dark:text-rose-400" x-text="'⚠ ' + importError"></p>
-        <p x-show="importOk" x-cloak class="mt-3 text-sm font-medium text-teal-700 dark:text-teal-400">
-          ✓ Backup restored. Reloading…
+        <p x-show="importError" x-cloak class="mt-3 text-sm font-medium text-brick" x-text="'⚠ ' + importError"></p>
+        <p x-show="importOk" x-cloak class="mt-3 flex items-center gap-1.5 text-sm font-medium text-ochre-deep">
+          <span x-html="$handCheck()"></span> Backup restored. Reloading…
         </p>
       </section>
 
       <!-- Erase -->
-      <section class="rounded-2xl border border-stone-200 bg-white p-5 dark:border-stone-800 dark:bg-stone-900">
-        <h2 class="font-semibold">Start over</h2>
-        <p class="mt-1 text-sm text-stone-500 dark:text-stone-400">
+      <section class="paper ml-2 rotate-[0.4deg] p-5">
+        <h2 class="font-display text-lg font-semibold text-ink">Start over</h2>
+        <p class="mt-1 text-sm font-light text-ink-2">
           Erases the limit, streak, goals and history on this device. There is no undo —
           export a backup first if in doubt.
         </p>
         <button
           type="button"
           @click="erase"
-          class="mt-3 min-h-12 w-full rounded-xl border font-semibold transition-colors"
+          class="pressable mt-3 min-h-12 w-full rounded-xl border font-semibold transition-colors"
           :class="eraseArmed
-            ? 'border-rose-500 bg-rose-600 text-white'
-            : 'border-rose-300 text-rose-600 dark:border-rose-900 dark:text-rose-400'"
+            ? 'border-brick bg-brick text-cream'
+            : 'border-brick/40 text-brick'"
           x-text="eraseArmed ? 'Tap again to erase everything' : 'Erase all data'"
         ></button>
       </section>
 
       <!-- About -->
-      <section class="px-1 pt-2 text-xs leading-relaxed text-stone-400 dark:text-stone-500">
+      <section class="px-2 pt-2 text-xs font-light leading-relaxed text-cream-2">
         <p>
           SaveLock is a discipline layer, not a wallet. It holds no money, connects to no
           bank, and sends nothing off this device. The real cash stays wherever you locked

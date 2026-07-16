@@ -3,20 +3,17 @@ import Layout from '../layouts/Layout.astro';
 ---
 
 <Layout title="SaveLock — Today" tab="today">
-  <main x-data="todayPage" class="mx-auto w-full max-w-md px-5 pb-36 pt-8">
-    <header class="mb-6 flex items-baseline justify-between">
-      <h1 class="text-lg font-semibold tracking-tight">SaveLock</h1>
-      <p class="text-sm text-stone-500 dark:text-stone-400" x-text="$store.sl.dateLong()"></p>
+  <main x-data="todayPage" class="mx-auto w-full max-w-md px-5 pb-44 pt-7">
+    <header class="mb-7 flex items-baseline justify-between px-1">
+      <h1 class="font-display text-xl font-semibold tracking-tight text-cream">SaveLock</h1>
+      <p class="text-sm font-light text-cream-2" x-text="$store.sl.dateLong()"></p>
     </header>
 
     <!-- First run: no daily limit set yet -->
-    <section
-      x-show="!$store.sl.hasLimit"
-      x-cloak
-      class="rounded-2xl border border-stone-200 bg-white p-6 dark:border-stone-800 dark:bg-stone-900"
-    >
-      <h2 class="text-xl font-semibold tracking-tight">Set a daily limit</h2>
-      <p class="mt-2 text-sm leading-relaxed text-stone-600 dark:text-stone-400">
+    <section x-show="!$store.sl.hasLimit" x-cloak class="paper relative rotate-[-1.2deg] p-6">
+      <span class="tape" aria-hidden="true"></span>
+      <h2 class="font-display text-2xl font-semibold tracking-tight">Set a daily limit</h2>
+      <p class="mt-2 text-sm leading-relaxed text-ink-2">
         How much can you spend in a day and still be fine at the end of the month?
         End each day at zero or better and your streak grows.
       </p>
@@ -30,11 +27,11 @@ import Layout from '../layouts/Layout.astro';
           min="1"
           step="any"
           placeholder="e.g. 500"
-          class="min-h-12 w-full rounded-xl border border-stone-300 bg-white px-4 text-base outline-none focus:border-teal-600 dark:border-stone-700 dark:bg-stone-950 dark:focus:border-teal-400"
+          class="min-h-12 w-full rounded-xl border border-paper-line bg-paper-deep px-4 text-base text-ink outline-none placeholder:text-ink-3 focus:border-ochre-soft"
         />
         <button
           type="submit"
-          class="min-h-12 shrink-0 rounded-xl bg-teal-700 px-5 font-semibold text-white active:bg-teal-800 dark:bg-teal-500 dark:text-stone-950 dark:active:bg-teal-400"
+          class="pressable min-h-12 shrink-0 rounded-xl bg-ochre px-5 font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"
         >
           Start
         </button>
@@ -43,105 +40,125 @@ import Layout from '../layouts/Layout.astro';
 
     <template x-if="$store.sl.hasLimit">
       <div>
-        <!-- Hero: what's left today -->
-        <section class="text-center" aria-live="polite">
-          <p class="text-sm font-medium text-stone-500 dark:text-stone-400">Left today</p>
-          <p
-            class="mt-1 text-6xl font-semibold tracking-tight"
-            :class="$store.sl.remaining < 0 ? 'text-rose-600 dark:text-rose-400' : ''"
-            x-text="$store.sl.money($store.sl.remaining)"
-          ></p>
-          <p class="mt-2 text-sm text-stone-500 dark:text-stone-400">
+        <!-- Hero: a tilted note stuck to the canvas -->
+        <section class="paper relative z-10 rotate-[-2deg] px-6 pb-5 pt-7" aria-live="polite">
+          <span class="tape" aria-hidden="true"></span>
+
+          <p class="text-xs font-light uppercase tracking-[0.22em] text-ink-3">Left today</p>
+          <p class="mt-1 leading-none">
+            <span
+              class="align-baseline text-xl font-light text-ink-2"
+              x-text="$store.sl.settings.currency"
+            ></span>
+            <span
+              class="font-display text-[64px] font-bold tracking-tight"
+              :class="$store.sl.remaining < 0 ? 'text-brick' : 'text-ink'"
+              x-text="$store.sl.fmt($store.sl.remaining)"
+            ></span>
+          </p>
+          <p class="mt-1.5 text-sm font-light text-ink-2">
             <span x-text="'of ' + $store.sl.money($store.sl.settings.dailyLimit)"></span>
             · resets at midnight
           </p>
           <p
             x-show="$store.sl.remaining < 0"
             x-cloak
-            class="mt-2 text-sm font-medium text-rose-600 dark:text-rose-400"
-            x-text="'⚠ ' + $store.sl.money(Math.abs($store.sl.remaining)) + ' over your limit — today ends the streak'"
+            class="mt-2 text-sm font-medium text-brick"
+            x-text="'⚠ ' + $store.sl.money(Math.abs($store.sl.remaining)) + ' over — today ends the streak'"
           ></p>
 
+          <!-- tick-mark arc gauge -->
           <div
-            class="mt-5 h-2 w-full overflow-hidden rounded-full bg-teal-100 dark:bg-teal-950"
+            class="relative mx-auto mt-4 w-52"
             role="progressbar"
             aria-label="Share of today's allowance remaining"
             :aria-valuenow="Math.round($store.sl.remainingRatio * 100)"
             aria-valuemin="0"
             aria-valuemax="100"
           >
-            <div
-              class="h-full rounded-full transition-all duration-300"
-              :class="$store.sl.remainingRatio <= 0 ? '' : $store.sl.remainingRatio < 0.25 ? 'bg-amber-500' : 'bg-teal-600 dark:bg-teal-400'"
-              :style="`width:${$store.sl.remainingRatio * 100}%`"
-            ></div>
+            <div x-html="allowanceGauge"></div>
+            <p class="absolute inset-x-0 bottom-0 text-center">
+              <span
+                class="font-display text-2xl font-semibold text-ink"
+                x-text="Math.round($store.sl.remainingRatio * 100) + '%'"
+              ></span>
+              <span class="block text-[10px] uppercase tracking-[0.18em] text-ink-3">remaining</span>
+            </p>
           </div>
 
-          <p class="mt-4">
-            <span
-              class="inline-block rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300"
+          <!-- streak, hand-underlined when alive -->
+          <div class="mt-5 flex flex-col items-center pb-1">
+            <p
+              class="text-sm font-medium"
+              :class="$store.sl.streak.count > 0 ? 'text-ochre-deep' : 'text-ink-3'"
               x-text="$store.sl.streak.count > 0
                 ? $store.sl.streak.count + ($store.sl.streak.count === 1 ? ' day' : ' days') + ' under budget'
                 : 'No streak yet — end today at zero or better'"
-            ></span>
-          </p>
+            ></p>
+            <span x-show="$store.sl.streak.count > 0" x-cloak x-html="$squiggle()"></span>
+          </div>
         </section>
 
-        <!-- Log a spend -->
-        <section class="mt-8">
-          <h2 class="text-sm font-semibold text-stone-500 dark:text-stone-400">Log a spend</h2>
-          <div class="mt-3 grid grid-cols-4 gap-2">
+        <!-- Log a spend: overlaps the hero's bottom edge, offset right -->
+        <section class="paper relative z-20 -mt-3 ml-4 rotate-[0.8deg] p-5">
+          <h2 class="text-xs font-semibold uppercase tracking-[0.18em] text-ink-3">Log a spend</h2>
+          <div class="mt-3 grid grid-cols-4 gap-2.5">
             <template x-for="q in quick" :key="q">
               <button
                 type="button"
                 @click="logQuick(q)"
-                class="min-h-14 rounded-xl border border-stone-200 bg-white text-lg font-semibold text-stone-800 active:border-teal-600 active:text-teal-700 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-100 dark:active:border-teal-400 dark:active:text-teal-400"
+                class="chip pressable min-h-14 rounded-2xl text-lg font-semibold text-ink"
                 x-text="q"
               ></button>
             </template>
             <button
               type="button"
               @click="openSheet"
-              class="min-h-14 rounded-xl bg-teal-700 text-sm font-semibold text-white active:bg-teal-800 dark:bg-teal-500 dark:text-stone-950 dark:active:bg-teal-400"
+              class="pressable min-h-14 rounded-2xl bg-ink text-sm font-semibold text-cream shadow-[0_3px_0_rgba(0,0,0,0.4)]"
             >
               Other…
             </button>
           </div>
         </section>
 
+        <!-- Last 7 days, sketchy bars -->
+        <section class="paper relative z-0 -mt-2 mr-5 rotate-[-0.7deg] p-5 pt-4">
+          <h2 class="text-xs font-semibold uppercase tracking-[0.18em] text-ink-3">Last 7 days</h2>
+          <div class="mt-2" x-html="historyChart"></div>
+        </section>
+
         <!-- Today's spends -->
-        <section class="mt-8">
-          <h2 class="text-sm font-semibold text-stone-500 dark:text-stone-400">
+        <section class="paper relative mt-4 ml-2 rotate-[0.4deg] p-5">
+          <h2 class="text-xs font-semibold uppercase tracking-[0.18em] text-ink-3">
             Today
             <span
+              class="normal-case tracking-normal"
               x-show="$store.sl.day.spends.length"
-              x-text="'· ' + $store.sl.money($store.sl.spentToday) + ' spent'"
+              x-text="'— ' + $store.sl.money($store.sl.spentToday) + ' spent'"
             ></span>
           </h2>
           <p
             x-show="!$store.sl.day.spends.length"
-            class="mt-3 rounded-2xl border border-dashed border-stone-300 p-5 text-center text-sm text-stone-500 dark:border-stone-700 dark:text-stone-400"
+            class="mt-3 rounded-xl border border-dashed border-paper-line px-4 py-5 text-center text-sm text-ink-3"
           >
             Nothing logged yet today.
           </p>
-          <ul x-show="$store.sl.day.spends.length" x-cloak class="mt-3 space-y-2">
+          <ul x-show="$store.sl.day.spends.length" x-cloak class="mt-1 divide-y divide-dashed divide-paper-line">
             <template x-for="s in [...$store.sl.day.spends].reverse()" :key="s.id">
-              <li
-                class="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white py-2 pl-4 pr-2 dark:border-stone-800 dark:bg-stone-900"
-              >
+              <li class="flex items-center gap-3 py-2.5">
                 <div class="min-w-0 flex-1">
-                  <p class="font-semibold tabular-nums" x-text="$store.sl.money(s.amount)"></p>
-                  <p class="truncate text-xs text-stone-500 dark:text-stone-400">
+                  <p class="font-semibold tabular-nums text-ink" x-text="$store.sl.money(s.amount)"></p>
+                  <p class="truncate text-xs font-light text-ink-2">
                     <span x-text="$store.sl.time(s.at)"></span><span x-show="s.note" x-text="' · ' + s.note"></span>
                   </p>
                 </div>
                 <button
                   type="button"
                   @click="$store.sl.deleteSpend(s.id)"
-                  class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-stone-400 active:bg-stone-100 active:text-rose-600 dark:active:bg-stone-800 dark:active:text-rose-400"
+                  class="pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-ink-3 active:text-brick"
                   :aria-label="'Delete spend of ' + $store.sl.money(s.amount)"
                 >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
                   </svg>
                 </button>
@@ -155,7 +172,7 @@ import Layout from '../layouts/Layout.astro';
     <!-- Custom amount sheet -->
     <div x-show="sheet" x-cloak class="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Log a spend">
       <div
-        class="absolute inset-0 bg-black/40"
+        class="absolute inset-0 bg-black/60"
         x-show="sheet"
         x-transition.opacity.duration.150ms
         @click="sheet = false"
@@ -169,13 +186,12 @@ import Layout from '../layouts/Layout.astro';
         x-transition:leave="transition duration-150 ease-in"
         x-transition:leave-start="translate-y-0"
         x-transition:leave-end="translate-y-full"
-        class="absolute inset-x-0 bottom-0 rounded-t-3xl bg-white p-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] dark:bg-stone-900"
+        class="paper absolute inset-x-0 bottom-0 rounded-b-none rounded-t-3xl p-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
       >
         <div class="mx-auto max-w-md">
-          <h3 class="text-lg font-semibold tracking-tight">Log a spend</h3>
-          <label class="mt-4 block text-sm font-medium text-stone-600 dark:text-stone-300" for="spend-amount">
-            Amount
-          </label>
+          <div class="mx-auto mb-3 h-1.5 w-10 rounded-full bg-paper-line" aria-hidden="true"></div>
+          <h3 class="font-display text-xl font-semibold tracking-tight">Log a spend</h3>
+          <label class="mt-4 block text-sm font-medium text-ink-2" for="spend-amount">Amount</label>
           <input
             id="spend-amount"
             x-ref="amountInput"
@@ -185,10 +201,10 @@ import Layout from '../layouts/Layout.astro';
             min="0"
             step="any"
             placeholder="0"
-            class="mt-1 min-h-12 w-full rounded-xl border border-stone-300 bg-white px-4 text-base outline-none focus:border-teal-600 dark:border-stone-700 dark:bg-stone-950 dark:focus:border-teal-400"
+            class="mt-1 min-h-12 w-full rounded-xl border border-paper-line bg-paper-deep px-4 text-base text-ink outline-none placeholder:text-ink-3 focus:border-ochre-soft"
           />
-          <label class="mt-3 block text-sm font-medium text-stone-600 dark:text-stone-300" for="spend-note">
-            Note <span class="font-normal text-stone-400">(optional)</span>
+          <label class="mt-3 block text-sm font-medium text-ink-2" for="spend-note">
+            Note <span class="font-light text-ink-3">(optional)</span>
           </label>
           <input
             id="spend-note"
@@ -196,19 +212,19 @@ import Layout from '../layouts/Layout.astro';
             type="text"
             maxlength="60"
             placeholder="lunch, fare…"
-            class="mt-1 min-h-12 w-full rounded-xl border border-stone-300 bg-white px-4 text-base outline-none focus:border-teal-600 dark:border-stone-700 dark:bg-stone-950 dark:focus:border-teal-400"
+            class="mt-1 min-h-12 w-full rounded-xl border border-paper-line bg-paper-deep px-4 text-base text-ink outline-none placeholder:text-ink-3 focus:border-ochre-soft"
           />
           <div class="mt-5 flex gap-3">
             <button
               type="button"
               @click="sheet = false"
-              class="min-h-12 flex-1 rounded-xl border border-stone-300 font-semibold text-stone-700 dark:border-stone-700 dark:text-stone-200"
+              class="pressable min-h-12 flex-1 rounded-xl border border-paper-line font-semibold text-ink-2"
             >
               Cancel
             </button>
             <button
               type="submit"
-              class="min-h-12 flex-1 rounded-xl bg-teal-700 font-semibold text-white active:bg-teal-800 dark:bg-teal-500 dark:text-stone-950 dark:active:bg-teal-400"
+              class="pressable min-h-12 flex-1 rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"
             >
               Log it
             </button>

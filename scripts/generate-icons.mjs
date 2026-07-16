@@ -22,23 +22,23 @@ if (targets.every(([name]) => existsSync(join(OUT, name)))) {
   process.exit(0);
 }
 
-// Same artwork as public/favicon.svg.
+// Same artwork as public/favicon.svg: cream lock, ochre keyhole, dark canvas.
 const glyph = `
-  <path d="M176 232v-44a80 80 0 0 1 160 0v44" fill="none" stroke="#ffffff" stroke-width="36" stroke-linecap="round"/>
-  <rect x="140" y="224" width="232" height="180" rx="40" fill="#ffffff"/>
-  <circle cx="256" cy="298" r="28" fill="#0f766e"/>
-  <rect x="243" y="310" width="26" height="52" rx="13" fill="#0f766e"/>
+  <path d="M176 232v-44a80 80 0 0 1 160 0v44" fill="none" stroke="#f4f1ea" stroke-width="36" stroke-linecap="round"/>
+  <rect x="140" y="224" width="232" height="180" rx="40" fill="#f4f1ea"/>
+  <circle cx="256" cy="298" r="28" fill="#c9922e"/>
+  <rect x="243" y="310" width="26" height="52" rx="13" fill="#c9922e"/>
 `;
 
 const svgs = {
   // Rounded tile with transparent corners — manifest purpose "any".
   rounded: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-    <rect width="512" height="512" rx="116" fill="#0f766e"/>
+    <rect width="512" height="512" rx="116" fill="#14120f"/>
     ${glyph}
   </svg>`,
   // Full-bleed square, glyph shrunk into the 80% safe zone — maskable/apple.
   fullBleed: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-    <rect width="512" height="512" fill="#0f766e"/>
+    <rect width="512" height="512" fill="#14120f"/>
     <g transform="translate(51.2 51.2) scale(0.8)">${glyph}</g>
   </svg>`,
 };

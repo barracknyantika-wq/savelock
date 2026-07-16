@@ -1,10 +1,16 @@
 import Alpine from 'alpinejs';
 import { registerStore, parseAmount, todayStr } from './store.js';
+import { tickGauge, sketchBars, squiggle, handCheck } from './viz.js';
 
 window.Alpine = Alpine;
 registerStore(Alpine);
 
 const store = () => Alpine.store('sl');
+
+// hand-feel SVG snippets, available in every x-data scope
+Alpine.magic('squiggle', () => squiggle);
+Alpine.magic('handCheck', () => handCheck);
+Alpine.magic('gauge', () => (ratio, opts) => tickGauge(ratio, opts));
 
 Alpine.data('todayPage', () => ({
   sheet: false,
@@ -12,6 +18,15 @@ Alpine.data('todayPage', () => ({
   note: '',
   limitInput: '',
   quick: [50, 100, 200],
+
+  get allowanceGauge() {
+    const s = store();
+    return tickGauge(s.remainingRatio, { low: s.remainingRatio < 0.25 });
+  },
+
+  get historyChart() {
+    return sketchBars(store().last7);
+  },
 
   openSheet() {
     this.sheet = true;
@@ -52,6 +67,10 @@ Alpine.data('goalsPage', () => ({
   breakId: null,
   breakText: '',
   minDate: todayStr(),
+
+  goalGauge(g) {
+    return tickGauge(store().progress(g));
+  },
 
   openNew() {
     this.gName = '';

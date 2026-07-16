@@ -1,7 +1,29 @@
+@import '@fontsource-variable/outfit';
+@import '@fontsource-variable/fraunces';
 @import "tailwindcss";
 
 @theme {
-  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-sans: 'Outfit Variable', system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
+
+  /* paper-on-dark-canvas palette */
+  --color-canvas: #0f0e0c;
+  --color-canvas-deep: #0b0a09;
+  --color-paper: #f4f1ea;
+  --color-paper-deep: #eae5d8;
+  --color-paper-line: #d5cebc;
+  --color-ink: #211e19;
+  --color-ink-2: #5c564a;
+  --color-ink-3: #8a8272;
+  --color-cream: #f4f1ea;
+  --color-cream-2: #b3ab9a;
+  --color-charcoal: #1c1915;
+  --color-charcoal-2: #262119;
+  --color-ochre: #c9922e;
+  --color-ochre-deep: #8c6414;
+  --color-ochre-soft: #b07e1f;
+  --color-brick: #b4452f;
+  --color-brick-bright: #e07856;
 }
 
 [x-cloak] {
@@ -10,6 +32,7 @@
 
 html {
   -webkit-tap-highlight-color: transparent;
+  background: var(--color-canvas);
 }
 
 body {
@@ -26,4 +49,77 @@ input[type="number"]::-webkit-inner-spin-button {
 input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
+}
+
+/* ---- paper & grain ------------------------------------------------- */
+
+/* fractal-noise grain tile, alpha baked in so it costs nothing to layer */
+:root {
+  --grain: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='0.05'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.canvas-grain {
+  background-color: var(--color-canvas);
+  background-image: var(--grain);
+}
+
+.paper {
+  background-color: var(--color-paper);
+  background-image: var(--grain);
+  border-radius: 20px;
+  color: var(--color-ink);
+  box-shadow:
+    0 1px 2px rgba(8, 6, 3, 0.45),
+    0 14px 34px -14px rgba(8, 6, 3, 0.8);
+}
+
+.paper-dark {
+  background-color: var(--color-charcoal);
+  background-image: var(--grain);
+  border: 1px solid rgba(244, 241, 234, 0.07);
+  border-radius: 20px;
+  color: var(--color-cream);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 16px 36px -14px rgba(0, 0, 0, 0.85);
+}
+
+/* masking tape stuck over the hero card's top edge */
+.tape {
+  position: absolute;
+  top: -13px;
+  left: 30px;
+  width: 92px;
+  height: 28px;
+  transform: rotate(-5deg);
+  background: linear-gradient(
+    100deg,
+    rgba(247, 240, 222, 0.5),
+    rgba(247, 240, 222, 0.68) 45%,
+    rgba(247, 240, 222, 0.48)
+  );
+  border-left: 1px dashed rgba(140, 120, 80, 0.25);
+  border-right: 1px dashed rgba(140, 120, 80, 0.25);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.22);
+  pointer-events: none;
+}
+
+/* tactile pressed state for anything tappable */
+.pressable {
+  transition: transform 0.06s ease, box-shadow 0.06s ease, background-color 0.06s ease;
+}
+.pressable:active {
+  transform: translateY(1.5px) scale(0.99);
+  box-shadow: none;
+}
+
+/* raised paper chips sitting on a paper card */
+.chip {
+  background: var(--color-paper);
+  border: 1px solid var(--color-paper-line);
+  box-shadow: 0 2px 0 var(--color-paper-line), 0 4px 10px -4px rgba(8, 6, 3, 0.25);
+}
+.chip:active {
+  box-shadow: 0 0 0 var(--color-paper-line);
+  transform: translateY(2px);
 }

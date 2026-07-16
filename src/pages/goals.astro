@@ -3,19 +3,19 @@ import Layout from '../layouts/Layout.astro';
 ---
 
 <Layout title="SaveLock — Goals" tab="goals">
-  <main x-data="goalsPage" class="mx-auto w-full max-w-md px-5 pb-36 pt-8">
-    <header class="mb-2 flex items-center justify-between">
-      <h1 class="text-lg font-semibold tracking-tight">Goals</h1>
+  <main x-data="goalsPage" class="mx-auto w-full max-w-md px-5 pb-44 pt-7">
+    <header class="mb-2 flex items-center justify-between px-1">
+      <h1 class="font-display text-xl font-semibold tracking-tight text-cream">Goals</h1>
       <button
         type="button"
         @click="openNew"
-        class="min-h-11 rounded-xl bg-teal-700 px-4 text-sm font-semibold text-white active:bg-teal-800 dark:bg-teal-500 dark:text-stone-950 dark:active:bg-teal-400"
+        class="pressable min-h-11 rounded-full bg-ochre px-5 text-sm font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"
       >
         New goal
       </button>
     </header>
 
-    <p class="mb-6 text-xs leading-relaxed text-stone-500 dark:text-stone-400">
+    <p class="mb-7 px-1 text-xs font-light leading-relaxed text-cream-2">
       The real money stays in your M-Shwari Lock or bank — SaveLock only keeps score.
     </p>
 
@@ -23,61 +23,59 @@ import Layout from '../layouts/Layout.astro';
     <p
       x-show="!$store.sl.activeGoals.length"
       x-cloak
-      class="rounded-2xl border border-dashed border-stone-300 p-6 text-center text-sm leading-relaxed text-stone-500 dark:border-stone-700 dark:text-stone-400"
+      class="rotate-[-1deg] rounded-2xl border border-dashed border-charcoal-2 px-6 py-7 text-center text-sm leading-relaxed text-cream-2"
     >
       No goals yet. Lock a target and a date — the waiting is the work.
     </p>
 
     <!-- Active goals -->
-    <div class="space-y-4">
-      <template x-for="g in $store.sl.activeGoals" :key="g.id">
+    <div class="space-y-5">
+      <template x-for="(g, gi) in $store.sl.activeGoals" :key="g.id">
         <section
-          class="rounded-2xl border bg-white p-5 dark:bg-stone-900"
-          :class="($store.sl.reached(g) || $store.sl.matured(g))
-            ? 'border-teal-600 dark:border-teal-400'
-            : 'border-stone-200 dark:border-stone-800'"
+          class="paper relative p-5"
+          :class="gi % 2 === 0 ? 'rotate-[-1deg] mr-3' : 'rotate-[0.8deg] ml-3'"
+          :style="($store.sl.reached(g) || $store.sl.matured(g)) ? 'box-shadow: 0 0 0 2px #c9922e, 0 14px 34px -14px rgba(8,6,3,.8)' : ''"
         >
-          <div class="flex items-baseline justify-between gap-3">
-            <h2 class="min-w-0 truncate text-lg font-semibold tracking-tight" x-text="g.name"></h2>
-            <p
-              class="shrink-0 text-sm text-stone-500 dark:text-stone-400"
-              x-text="Math.round($store.sl.progress(g) * 100) + '%'"
-            ></p>
-          </div>
-
-          <p class="mt-1 text-sm text-stone-600 dark:text-stone-300">
-            <span class="font-semibold text-stone-900 dark:text-stone-100" x-text="$store.sl.money(g.saved)"></span>
-            <span x-text="' of ' + $store.sl.money(g.target)"></span>
-          </p>
-
-          <div
-            class="mt-3 h-2 w-full overflow-hidden rounded-full bg-teal-100 dark:bg-teal-950"
-            role="progressbar"
-            :aria-label="'Progress toward ' + g.name"
-            :aria-valuenow="Math.round($store.sl.progress(g) * 100)"
-            aria-valuemin="0"
-            aria-valuemax="100"
-          >
+          <div class="flex items-start justify-between gap-4">
+            <div class="min-w-0">
+              <h2 class="truncate font-display text-xl font-semibold tracking-tight text-ink" x-text="g.name"></h2>
+              <p class="mt-0.5 text-sm font-light text-ink-2">
+                <span class="font-semibold text-ink" x-text="$store.sl.money(g.saved)"></span>
+                <span x-text="' of ' + $store.sl.money(g.target)"></span>
+              </p>
+            </div>
+            <!-- small tick gauge -->
             <div
-              class="h-full rounded-full bg-teal-600 transition-all duration-300 dark:bg-teal-400"
-              :style="`width:${$store.sl.progress(g) * 100}%`"
-            ></div>
+              class="relative w-24 shrink-0"
+              role="progressbar"
+              :aria-label="'Progress toward ' + g.name"
+              :aria-valuenow="Math.round($store.sl.progress(g) * 100)"
+              aria-valuemin="0"
+              aria-valuemax="100"
+            >
+              <div x-html="goalGauge(g)"></div>
+              <p
+                class="absolute inset-x-0 bottom-0 text-center font-display text-sm font-semibold text-ink"
+                x-text="Math.round($store.sl.progress(g) * 100) + '%'"
+              ></p>
+            </div>
           </div>
 
           <!-- Celebration state -->
           <template x-if="$store.sl.reached(g) || $store.sl.matured(g)">
-            <div class="mt-4 rounded-xl bg-teal-50 p-4 dark:bg-teal-950/50">
-              <p class="font-semibold text-teal-800 dark:text-teal-300">
-                <span x-text="$store.sl.reached(g) ? '🎉 Target hit.' : '🎉 You made it to the date.'"></span>
+            <div class="mt-4 rounded-xl border border-ochre/40 bg-ochre/10 p-4">
+              <p class="font-display text-lg font-semibold text-ochre-deep">
+                <span x-html="$handCheck()"></span>
+                <span x-text="$store.sl.reached(g) ? 'Target hit.' : 'You made it to the date.'"></span>
               </p>
-              <p class="mt-1 text-sm leading-relaxed text-teal-900/80 dark:text-teal-200/80">
+              <p class="mt-1 text-sm font-light leading-relaxed text-ink-2">
                 <span x-show="!$store.sl.matured(g)" x-text="$store.sl.daysLeft(g) + ' days ahead of schedule. '"></span>
                 The money is in your real account, not here. Withdraw it there — then mark this done.
               </p>
               <button
                 type="button"
                 @click="$store.sl.completeGoal(g.id)"
-                class="mt-3 min-h-11 w-full rounded-xl bg-teal-700 font-semibold text-white active:bg-teal-800 dark:bg-teal-500 dark:text-stone-950 dark:active:bg-teal-400"
+                class="pressable mt-3 min-h-11 w-full rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"
               >
                 Mark done
               </button>
@@ -86,17 +84,17 @@ import Layout from '../layouts/Layout.astro';
 
           <!-- Countdown -->
           <template x-if="!($store.sl.reached(g) || $store.sl.matured(g))">
-            <p class="mt-3 text-sm text-stone-600 dark:text-stone-300">
-              <span class="text-2xl font-semibold tracking-tight text-stone-900 dark:text-stone-100" x-text="$store.sl.daysLeft(g)"></span>
+            <p class="mt-3 text-sm font-light text-ink-2">
+              <span class="font-display text-4xl font-bold tracking-tight text-ink" x-text="$store.sl.daysLeft(g)"></span>
               <span x-text="($store.sl.daysLeft(g) === 1 ? ' day' : ' days') + ' until ' + $store.sl.dateShort(g.date)"></span>
             </p>
           </template>
 
-          <div class="mt-4 flex items-center justify-between gap-3">
+          <div class="mt-4 flex items-center justify-between gap-3 border-t border-dashed border-paper-line pt-3.5">
             <button
               type="button"
               @click="openUpdate(g)"
-              class="min-h-11 flex-1 rounded-xl border border-stone-300 text-sm font-semibold text-stone-700 active:bg-stone-100 dark:border-stone-700 dark:text-stone-200 dark:active:bg-stone-800"
+              class="chip pressable min-h-11 flex-1 rounded-xl text-sm font-semibold text-ink"
             >
               Update saved
             </button>
@@ -104,7 +102,7 @@ import Layout from '../layouts/Layout.astro';
               <button
                 type="button"
                 @click="startBreak(g)"
-                class="min-h-11 rounded-xl px-3 text-sm font-medium text-stone-400 active:text-rose-600 dark:text-stone-500 dark:active:text-rose-400"
+                class="pressable min-h-11 rounded-xl px-3 text-sm font-medium text-ink-3 active:text-brick"
               >
                 Break early
               </button>
@@ -115,24 +113,22 @@ import Layout from '../layouts/Layout.astro';
     </div>
 
     <!-- Past goals -->
-    <details x-show="$store.sl.pastGoals.length" x-cloak class="mt-8">
-      <summary
-        class="cursor-pointer select-none text-sm font-semibold text-stone-500 dark:text-stone-400"
-      >
+    <details x-show="$store.sl.pastGoals.length" x-cloak class="mt-9 px-1">
+      <summary class="cursor-pointer select-none text-sm font-medium text-cream-2">
         Past goals (<span x-text="$store.sl.pastGoals.length"></span>)
       </summary>
-      <ul class="mt-3 space-y-2">
+      <ul class="mt-3 space-y-3">
         <template x-for="g in $store.sl.pastGoals" :key="g.id">
-          <li class="rounded-2xl border border-stone-200 bg-white p-4 dark:border-stone-800 dark:bg-stone-900">
+          <li class="paper-dark rounded-2xl p-4">
             <div class="flex items-baseline justify-between gap-3">
-              <p class="min-w-0 truncate font-semibold" x-text="g.name"></p>
+              <p class="min-w-0 truncate font-semibold text-cream" x-text="g.name"></p>
               <p
-                class="shrink-0 text-xs font-semibold"
-                :class="g.status === 'done' ? 'text-teal-700 dark:text-teal-400' : 'text-rose-600 dark:text-rose-400'"
+                class="shrink-0 text-xs font-bold uppercase tracking-wider"
+                :class="g.status === 'done' ? 'text-ochre' : 'text-brick-bright'"
                 x-text="g.status === 'done' ? 'Done' : 'Broken'"
               ></p>
             </div>
-            <p class="mt-1 text-xs text-stone-500 dark:text-stone-400">
+            <p class="mt-1 text-xs font-light text-cream-2">
               <span x-text="$store.sl.money(g.saved) + ' of ' + $store.sl.money(g.target)"></span>
               <span
                 x-text="g.status === 'done'
@@ -147,7 +143,7 @@ import Layout from '../layouts/Layout.astro';
 
     <!-- New goal sheet -->
     <div x-show="newSheet" x-cloak class="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="New goal">
-      <div class="absolute inset-0 bg-black/40" x-show="newSheet" x-transition.opacity.duration.150ms @click="newSheet = false"></div>
+      <div class="absolute inset-0 bg-black/60" x-show="newSheet" x-transition.opacity.duration.150ms @click="newSheet = false"></div>
       <form
         @submit.prevent="submitNew"
         x-show="newSheet"
@@ -157,14 +153,15 @@ import Layout from '../layouts/Layout.astro';
         x-transition:leave="transition duration-150 ease-in"
         x-transition:leave-start="translate-y-0"
         x-transition:leave-end="translate-y-full"
-        class="absolute inset-x-0 bottom-0 rounded-t-3xl bg-white p-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] dark:bg-stone-900"
+        class="paper absolute inset-x-0 bottom-0 rounded-b-none rounded-t-3xl p-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
       >
         <div class="mx-auto max-w-md">
-          <h3 class="text-lg font-semibold tracking-tight">New goal</h3>
-          <p class="mt-1 text-xs text-stone-500 dark:text-stone-400">
+          <div class="mx-auto mb-3 h-1.5 w-10 rounded-full bg-paper-line" aria-hidden="true"></div>
+          <h3 class="font-display text-xl font-semibold tracking-tight">New goal</h3>
+          <p class="mt-1 text-xs font-light text-ink-2">
             Match it to a real lock — the one where the money actually sits.
           </p>
-          <label class="mt-4 block text-sm font-medium text-stone-600 dark:text-stone-300" for="goal-name">Name</label>
+          <label class="mt-4 block text-sm font-medium text-ink-2" for="goal-name">Name</label>
           <input
             id="goal-name"
             x-model="gName"
@@ -172,9 +169,9 @@ import Layout from '../layouts/Layout.astro';
             maxlength="40"
             required
             placeholder="Emergency fund"
-            class="mt-1 min-h-12 w-full rounded-xl border border-stone-300 bg-white px-4 text-base outline-none focus:border-teal-600 dark:border-stone-700 dark:bg-stone-950 dark:focus:border-teal-400"
+            class="mt-1 min-h-12 w-full rounded-xl border border-paper-line bg-paper-deep px-4 text-base text-ink outline-none placeholder:text-ink-3 focus:border-ochre-soft"
           />
-          <label class="mt-3 block text-sm font-medium text-stone-600 dark:text-stone-300" for="goal-target">Target amount</label>
+          <label class="mt-3 block text-sm font-medium text-ink-2" for="goal-target">Target amount</label>
           <input
             id="goal-target"
             x-model="gTarget"
@@ -184,22 +181,22 @@ import Layout from '../layouts/Layout.astro';
             step="any"
             required
             placeholder="20,000"
-            class="mt-1 min-h-12 w-full rounded-xl border border-stone-300 bg-white px-4 text-base outline-none focus:border-teal-600 dark:border-stone-700 dark:bg-stone-950 dark:focus:border-teal-400"
+            class="mt-1 min-h-12 w-full rounded-xl border border-paper-line bg-paper-deep px-4 text-base text-ink outline-none placeholder:text-ink-3 focus:border-ochre-soft"
           />
-          <label class="mt-3 block text-sm font-medium text-stone-600 dark:text-stone-300" for="goal-date">Withdraw date</label>
+          <label class="mt-3 block text-sm font-medium text-ink-2" for="goal-date">Withdraw date</label>
           <input
             id="goal-date"
             x-model="gDate"
             type="date"
             :min="minDate"
             required
-            class="mt-1 min-h-12 w-full rounded-xl border border-stone-300 bg-white px-4 text-base outline-none focus:border-teal-600 dark:border-stone-700 dark:bg-stone-950 dark:focus:border-teal-400"
+            class="mt-1 min-h-12 w-full rounded-xl border border-paper-line bg-paper-deep px-4 text-base text-ink outline-none focus:border-ochre-soft"
           />
           <div class="mt-5 flex gap-3">
-            <button type="button" @click="newSheet = false" class="min-h-12 flex-1 rounded-xl border border-stone-300 font-semibold text-stone-700 dark:border-stone-700 dark:text-stone-200">
+            <button type="button" @click="newSheet = false" class="pressable min-h-12 flex-1 rounded-xl border border-paper-line font-semibold text-ink-2">
               Cancel
             </button>
-            <button type="submit" class="min-h-12 flex-1 rounded-xl bg-teal-700 font-semibold text-white active:bg-teal-800 dark:bg-teal-500 dark:text-stone-950 dark:active:bg-teal-400">
+            <button type="submit" class="pressable min-h-12 flex-1 rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]">
               Lock it in
             </button>
           </div>
@@ -209,7 +206,7 @@ import Layout from '../layouts/Layout.astro';
 
     <!-- Update saved sheet -->
     <div x-show="updSheet" x-cloak class="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Update saved amount">
-      <div class="absolute inset-0 bg-black/40" x-show="updSheet" x-transition.opacity.duration.150ms @click="updSheet = false"></div>
+      <div class="absolute inset-0 bg-black/60" x-show="updSheet" x-transition.opacity.duration.150ms @click="updSheet = false"></div>
       <form
         @submit.prevent="submitUpdate"
         x-show="updSheet"
@@ -219,14 +216,13 @@ import Layout from '../layouts/Layout.astro';
         x-transition:leave="transition duration-150 ease-in"
         x-transition:leave-start="translate-y-0"
         x-transition:leave-end="translate-y-full"
-        class="absolute inset-x-0 bottom-0 rounded-t-3xl bg-white p-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] dark:bg-stone-900"
+        class="paper absolute inset-x-0 bottom-0 rounded-b-none rounded-t-3xl p-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
       >
         <div class="mx-auto max-w-md">
-          <h3 class="text-lg font-semibold tracking-tight" x-text="'Update “' + updName + '”'"></h3>
-          <label class="mt-4 block text-sm font-medium text-stone-600 dark:text-stone-300" for="upd-amount">
-            Total saved so far
-          </label>
-          <p class="mt-1 text-xs text-stone-500 dark:text-stone-400">
+          <div class="mx-auto mb-3 h-1.5 w-10 rounded-full bg-paper-line" aria-hidden="true"></div>
+          <h3 class="font-display text-xl font-semibold tracking-tight" x-text="'Update “' + updName + '”'"></h3>
+          <label class="mt-4 block text-sm font-medium text-ink-2" for="upd-amount">Total saved so far</label>
+          <p class="mt-1 text-xs font-light text-ink-2">
             Enter what's actually sitting in the real lock right now.
           </p>
           <input
@@ -238,13 +234,13 @@ import Layout from '../layouts/Layout.astro';
             min="0"
             step="any"
             placeholder="0"
-            class="mt-2 min-h-12 w-full rounded-xl border border-stone-300 bg-white px-4 text-base outline-none focus:border-teal-600 dark:border-stone-700 dark:bg-stone-950 dark:focus:border-teal-400"
+            class="mt-2 min-h-12 w-full rounded-xl border border-paper-line bg-paper-deep px-4 text-base text-ink outline-none placeholder:text-ink-3 focus:border-ochre-soft"
           />
           <div class="mt-5 flex gap-3">
-            <button type="button" @click="updSheet = false" class="min-h-12 flex-1 rounded-xl border border-stone-300 font-semibold text-stone-700 dark:border-stone-700 dark:text-stone-200">
+            <button type="button" @click="updSheet = false" class="pressable min-h-12 flex-1 rounded-xl border border-paper-line font-semibold text-ink-2">
               Cancel
             </button>
-            <button type="submit" class="min-h-12 flex-1 rounded-xl bg-teal-700 font-semibold text-white active:bg-teal-800 dark:bg-teal-500 dark:text-stone-950 dark:active:bg-teal-400">
+            <button type="submit" class="pressable min-h-12 flex-1 rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]">
               Save
             </button>
           </div>
@@ -252,55 +248,52 @@ import Layout from '../layouts/Layout.astro';
       </form>
     </div>
 
-    <!-- Break goal: deliberately high-friction, full-screen -->
+    <!-- Break goal: deliberately high-friction, weighty and dark -->
     <div
       x-show="breakId"
       x-cloak
-      class="fixed inset-0 z-50 overflow-y-auto bg-stone-50 dark:bg-stone-950"
+      class="fixed inset-0 z-50 overflow-y-auto bg-canvas-deep"
       role="dialog"
       aria-modal="true"
       aria-label="Break goal early"
     >
       <template x-if="breakGoal">
-        <div class="mx-auto flex min-h-full w-full max-w-md flex-col px-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-10">
-          <h2 class="text-2xl font-semibold tracking-tight">
+        <div class="mx-auto flex min-h-full w-full max-w-md flex-col px-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-12">
+          <h2 class="font-display text-3xl font-semibold tracking-tight text-cream">
             Break “<span x-text="breakGoal.name"></span>” early?
           </h2>
 
-          <div class="mt-6 space-y-3">
-            <div class="rounded-2xl border border-stone-200 bg-white p-5 dark:border-stone-800 dark:bg-stone-900">
-              <p class="text-4xl font-semibold tracking-tight text-rose-600 dark:text-rose-400">
-                <span x-text="$store.sl.daysLeft(breakGoal)"></span>
-                <span class="text-lg" x-text="$store.sl.daysLeft(breakGoal) === 1 ? 'day' : 'days'"></span>
+          <div class="mt-7 space-y-4">
+            <div class="paper-dark p-5" style="border-color: rgba(224,120,86,0.3)">
+              <p class="font-display leading-none">
+                <span class="text-6xl font-bold text-brick-bright" x-text="$store.sl.daysLeft(breakGoal)"></span>
+                <span class="text-xl font-light text-cream-2" x-text="$store.sl.daysLeft(breakGoal) === 1 ? ' day' : ' days'"></span>
               </p>
-              <p class="mt-1 text-sm text-stone-600 dark:text-stone-300">
-                still to go until <span x-text="$store.sl.dateShort(breakGoal.date)"></span>. You'd be quitting with
-                <span class="font-semibold" x-text="$store.sl.money(breakGoal.saved) + ' of ' + $store.sl.money(breakGoal.target)"></span>
+              <p class="mt-2 text-sm font-light leading-relaxed text-cream-2">
+                still to go until <span class="text-cream" x-text="$store.sl.dateShort(breakGoal.date)"></span>. You'd be quitting with
+                <span class="font-semibold text-cream" x-text="$store.sl.money(breakGoal.saved) + ' of ' + $store.sl.money(breakGoal.target)"></span>
                 (<span x-text="Math.round($store.sl.progress(breakGoal) * 100) + '%'"></span>) on the board.
               </p>
             </div>
 
-            <div
-              x-show="$store.sl.streak.count > 0"
-              class="rounded-2xl border border-stone-200 bg-white p-5 dark:border-stone-800 dark:bg-stone-900"
-            >
-              <p class="font-semibold text-rose-600 dark:text-rose-400">
+            <div x-show="$store.sl.streak.count > 0" class="paper-dark p-5" style="border-color: rgba(224,120,86,0.3)">
+              <p class="font-semibold text-brick-bright">
                 Your <span x-text="$store.sl.streak.count"></span>-day streak resets to zero.
               </p>
-              <p class="mt-1 text-sm text-stone-600 dark:text-stone-300">
+              <p class="mt-1 text-sm font-light leading-relaxed text-cream-2">
                 Every one of those days, you held the line. Breaking the lock erases that record.
               </p>
             </div>
 
-            <p class="px-1 text-sm leading-relaxed text-stone-600 dark:text-stone-300">
+            <p class="px-1 text-sm font-light leading-relaxed text-cream-2">
               No money moves — it never left your real account. This only records that you didn't wait.
               If something urgent came up, that's a fair call. If it's just an itch, close this screen.
             </p>
           </div>
 
-          <div class="mt-auto pt-8">
-            <label class="block text-sm font-medium text-stone-600 dark:text-stone-300" for="break-confirm">
-              Type <span class="font-mono font-bold">YES</span> to break the lock
+          <div class="mt-auto pt-9">
+            <label class="block text-sm font-medium text-cream-2" for="break-confirm">
+              Type <span class="font-mono font-bold text-cream">YES</span> to break the lock
             </label>
             <input
               id="break-confirm"
@@ -309,13 +302,13 @@ import Layout from '../layouts/Layout.astro';
               autocomplete="off"
               autocapitalize="characters"
               spellcheck="false"
-              class="mt-1 min-h-12 w-full rounded-xl border border-stone-300 bg-white px-4 text-base outline-none focus:border-rose-500 dark:border-stone-700 dark:bg-stone-900"
+              class="mt-1.5 min-h-12 w-full rounded-xl border border-charcoal-2 bg-charcoal px-4 text-base text-cream outline-none focus:border-brick"
             />
             <div class="mt-4 flex flex-col gap-3">
               <button
                 type="button"
                 @click="breakId = null; breakText = ''"
-                class="min-h-13 rounded-xl bg-teal-700 font-semibold text-white active:bg-teal-800 dark:bg-teal-500 dark:text-stone-950 dark:active:bg-teal-400"
+                class="pressable min-h-13 rounded-xl bg-paper font-semibold text-ink shadow-[0_3px_0_rgba(0,0,0,0.5)]"
               >
                 Keep waiting
               </button>
@@ -323,7 +316,7 @@ import Layout from '../layouts/Layout.astro';
                 type="button"
                 @click="confirmBreak"
                 :disabled="breakText.trim() !== 'YES'"
-                class="min-h-13 rounded-xl border border-rose-300 font-semibold text-rose-600 disabled:opacity-40 dark:border-rose-900 dark:text-rose-400"
+                class="pressable min-h-13 rounded-xl border border-brick/50 font-semibold text-brick-bright disabled:opacity-35"
               >
                 Break it
               </button>
