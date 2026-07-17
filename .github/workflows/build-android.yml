@@ -1,0 +1,72 @@
+# Builds the SaveLock native Android debug APK in the cloud.
+#
+# This exists because RECEIVE_SMS/local Kotlin builds can be blocked by
+# machine-level antivirus/policy tooling that intercepts Gradle/AAPT — doing
+# the build on a GitHub-hosted runner sidesteps that entirely.
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      # Whichever of these two names the branch ends up under on GitHub.
+      - sms-feature
+      - claude/savelock-savings-pwa-x7dslo
+  # Lets you re-run this on demand from the Actions tab, any branch.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          # AGP 8.x (this project uses 8.13.0, see android/build.gradle)
+          # requires JDK 17 at minimum. If the Gradle step below fails with
+          # a JDK-compatibility error, bump this to '21' and re-run.
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install Android SDK platform (compileSdk/targetSdk = 36, see android/variables.gradle)
+        run: sdkmanager "platform-tools" "platforms;android-36"
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Build web app
+        run: npm run build
+
+      - name: Sync Capacitor Android project
+        run: npx cap sync android
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: savelock-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

@@ -1,0 +1,15 @@
+{
+  "appId": "com.savelock.app",
+  "appName": "SaveLock",
+  "webDir": "dist",
+  "backgroundColor": "#0f0e0c",
+  "android": {
+    "backgroundColor": "#0f0e0c"
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_savelock",
+      "iconColor": "#c9922e"
+    }
+  }
+}

@@ -40,12 +40,21 @@ function uid() {
 function defaultState() {
   return {
     version: 1,
-    settings: { dailyLimit: 0, currency: 'KSh' },
+    settings: {
+      dailyLimit: 0,
+      currency: 'KSh',
+      smsNotifySpend: true,
+      smsNotifyReceived: true,
+    },
     day: { date: todayStr(), spends: [] },
     streak: { count: 0 },
     history: [],
     goals: [],
     breaks: [],
+    // M-Pesa transaction codes already recorded, native or manual dedup —
+    // an SMS re-delivered by the OS (or re-drained after a crash) can never
+    // be logged twice. Bounded so it can't grow forever.
+    processedMpesaCodes: [],
   };
 }
 
@@ -64,6 +73,7 @@ function load() {
       history: Array.isArray(saved.history) ? saved.history : [],
       goals: Array.isArray(saved.goals) ? saved.goals : [],
       breaks: Array.isArray(saved.breaks) ? saved.breaks : [],
+      processedMpesaCodes: Array.isArray(saved.processedMpesaCodes) ? saved.processedMpesaCodes : [],
     };
   } catch {
     return base;
@@ -83,11 +93,12 @@ export function registerStore(Alpine) {
     },
 
     persist() {
-      const { version, settings, day, streak, history, goals, breaks } = this;
+      const { version, settings, day, streak, history, goals, breaks, processedMpesaCodes } = this;
       localStorage.setItem(
         KEY,
-        JSON.stringify({ version, settings, day, streak, history, goals, breaks })
+        JSON.stringify({ version, settings, day, streak, history, goals, breaks, processedMpesaCodes })
       );
+      window.dispatchEvent(new CustomEvent('savelock:persist'));
     },
 
     // ---- day boundary -------------------------------------------------
@@ -191,6 +202,73 @@ export function registerStore(Alpine) {
       this.persist();
     },
 
+    setSmsNotifySpend(v) {
+      this.settings.smsNotifySpend = !!v;
+      this.persist();
+    },
+
+    setSmsNotifyReceived(v) {
+      this.settings.smsNotifyReceived = !!v;
+      this.persist();
+    },
+
+    // ---- SMS auto-detected transactions (native Android shell only) -----
+    //
+    // The native SmsReceiver parses+notifies+queues instantly, even while
+    // this JS runtime isn't running. It hands transactions over here in two
+    // ways: one at a time as they arrive while the app is open (native-bridge
+    // listens for a plugin event), and in a batch on launch/resume to pick up
+    // whatever queued while the app was fully closed. Both paths land here,
+    // so the mpesaCode dedup guards against double-logging either way.
+
+    recordNativeTransaction(tx) {
+      if (!tx || !tx.mpesaCode || this.processedMpesaCodes.includes(tx.mpesaCode)) return null;
+      this.processedMpesaCodes.push(tx.mpesaCode);
+      if (this.processedMpesaCodes.length > 300) {
+        this.processedMpesaCodes = this.processedMpesaCodes.slice(-300);
+      }
+      if (tx.type !== 'spend') {
+        // "received" — never counted as spending, just marked seen so a
+        // redelivered SMS can't notify twice.
+        this.persist();
+        return null;
+      }
+      this.rollover();
+      const amount = Math.round(tx.amount * 100) / 100;
+      const record = {
+        id: uid(),
+        amount,
+        note: tx.counterparty || '',
+        at: tx.receivedAt || Date.now(),
+        source: 'sms',
+        mpesaCode: tx.mpesaCode,
+        classification: 'spend',
+      };
+      this.day.spends.push(record);
+      this.persist();
+      return record;
+    },
+
+    drainNativeTransactions(list) {
+      return (Array.isArray(list) ? list : []).map((tx) => this.recordNativeTransaction(tx)).filter(Boolean);
+    },
+
+    // "Not spending" — e.g. an SMS-detected transfer that was really money
+    // moved into a real-world lock. Pulls the amount back out of today's
+    // spending and credits it to the goal's saved total. No money moves;
+    // this only corrects the score.
+    reclassifyAsSavings(spendId, goalId) {
+      const idx = this.day.spends.findIndex((s) => s.id === spendId);
+      if (idx === -1) return null;
+      const goal = this.goals.find((g) => g.id === goalId && g.status === 'active');
+      if (!goal) return null;
+      const [spend] = this.day.spends.splice(idx, 1);
+      spend.classification = 'savings-transfer';
+      goal.saved = Math.round((goal.saved + spend.amount) * 100) / 100;
+      this.persist();
+      return { spend, goal };
+    },
+
     // ---- goals ----------------------------------------------------------
 
     get activeGoals() {
@@ -275,13 +353,13 @@ export function registerStore(Alpine) {
     // ---- backup ---------------------------------------------------------
 
     exportData() {
-      const { version, settings, day, streak, history, goals, breaks } = this;
+      const { version, settings, day, streak, history, goals, breaks, processedMpesaCodes } = this;
       return JSON.stringify(
         {
           app: 'savelock',
           version,
           exportedAt: new Date().toISOString(),
-          data: { version, settings, day, streak, history, goals, breaks },
+          data: { version, settings, day, streak, history, goals, breaks, processedMpesaCodes },
         },
         null,
         2

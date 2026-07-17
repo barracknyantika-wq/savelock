@@ -1,6 +1,13 @@
 import Alpine from 'alpinejs';
 import { registerStore, parseAmount, todayStr } from './store.js';
 import { tickGauge, sketchBars, squiggle, handCheck } from './viz.js';
+import {
+  isNative,
+  initNativeBridge,
+  pushNotificationPrefs,
+  checkSmsPermission,
+  requestSmsPermission,
+} from './native-bridge.js';
 
 window.Alpine = Alpine;
 registerStore(Alpine);
@@ -18,6 +25,8 @@ Alpine.data('todayPage', () => ({
   note: '',
   limitInput: '',
   quick: [50, 100, 200],
+  reclassifyId: null,
+  confirmBanner: '',
 
   get allowanceGauge() {
     const s = store();
@@ -28,9 +37,30 @@ Alpine.data('todayPage', () => ({
     return sketchBars(store().last7);
   },
 
+  get reclassifySpend() {
+    return store().day.spends.find((s) => s.id === this.reclassifyId) || null;
+  },
+
+  get activeGoals() {
+    return store().activeGoals;
+  },
+
   openSheet() {
     this.sheet = true;
     this.$nextTick(() => this.$refs.amountInput?.focus());
+  },
+
+  openReclassify(spendId) {
+    this.reclassifyId = spendId;
+  },
+
+  confirmReclassify(goalId) {
+    const spend = this.reclassifySpend;
+    const res = store().reclassifyAsSavings(this.reclassifyId, goalId);
+    this.reclassifyId = null;
+    if (!res) return;
+    this.confirmBanner = `${store().money(spend.amount)} moved to savings — added to your goal, not counted as spending.`;
+    setTimeout(() => (this.confirmBanner = ''), 4000);
   },
 
   logQuick(v) {
@@ -125,11 +155,37 @@ Alpine.data('settingsPage', () => ({
   importError: '',
   importOk: false,
   eraseArmed: false,
+  native: isNative(),
+  smsPermState: null,
 
-  init() {
+  async init() {
     const s = store();
     this.limitInput = s.settings.dailyLimit > 0 ? String(s.settings.dailyLimit) : '';
     this.currencyInput = s.settings.currency;
+    if (this.native) this.smsPermState = await checkSmsPermission();
+  },
+
+  get smsGranted() {
+    return this.smsPermState?.sms === 'granted';
+  },
+
+  get smsDenied() {
+    return this.smsPermState?.sms === 'denied';
+  },
+
+  async enableSmsDetection() {
+    this.smsPermState = await requestSmsPermission();
+    if (this.smsGranted) pushNotificationPrefs(store());
+  },
+
+  toggleSmsNotifySpend() {
+    store().setSmsNotifySpend(!store().settings.smsNotifySpend);
+    pushNotificationPrefs(store());
+  },
+
+  toggleSmsNotifyReceived() {
+    store().setSmsNotifyReceived(!store().settings.smsNotifyReceived);
+    pushNotificationPrefs(store());
   },
 
   saveLimit() {
@@ -182,3 +238,4 @@ Alpine.data('settingsPage', () => ({
 }));
 
 Alpine.start();
+initNativeBridge(store());

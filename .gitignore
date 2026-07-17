@@ -12,3 +12,14 @@ package-lock.json
 .env.production
 # macOS-specific files
 .DS_Store
+
+# Android native shell — generated/local, not source
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/local.properties
+android/**/build/
+android/.gradle/
+android/captures/
+android/*.iml
+android/.idea/
+
