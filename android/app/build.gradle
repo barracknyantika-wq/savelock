@@ -1,3 +1,11 @@
+// Must precede apply plugin: below — Gradle requires plugins{} to be the
+// first block in the file. Version isn't repeated here; it's resolved from
+// the root android/build.gradle's plugins{} block (declared there with
+// apply false, specifically so it only needs pinning in one place).
+plugins {
+    id 'org.jetbrains.kotlin.android'
+}
+
 apply plugin: 'com.android.application'
 
 android {
@@ -32,6 +40,10 @@ repositories {
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
+    // Must match the version pinned in the root build.gradle's plugins{}
+    // block — the plugins{} DSL requires a literal string there, so it
+    // can't be shared via a Groovy variable the way the other versions below are.
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.0.21"
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"

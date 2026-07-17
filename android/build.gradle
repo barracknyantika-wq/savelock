@@ -1,7 +1,12 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 
+// When mixing buildscript{} (legacy classpath mechanism, used below for AGP)
+// with plugins{} (used for Kotlin) in the same script, Gradle requires
+// buildscript{} to come first — verified directly against this project with
+// the real Gradle engine: putting plugins{} first fails with "all
+// buildscript {} blocks must appear before any plugins {} blocks in the
+// script".
 buildscript {
-    
     repositories {
         google()
         mavenCentral()
@@ -13,6 +18,25 @@ buildscript {
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files
     }
+}
+
+// Declares the Kotlin Android plugin version here (apply false: this root
+// project doesn't need Kotlin itself, only android/app does) so
+// app/build.gradle can reference the plugin by id alone.
+//
+// Needed because SmsReceiver.kt / SmsMpesaPlugin.kt / MpesaParser.kt live
+// alongside MainActivity.java in android/app — without this plugin, Gradle
+// never runs a Kotlin compile task and javac can't see the Kotlin classes.
+//
+// Version pinned to 2.0.21 because that's what this toolchain's own Gradle
+// 8.14.3 embeds (confirmed via `gradle -version`), so it's a known-present,
+// known-working Kotlin release for this exact Gradle version — not a proven
+// pairing with AGP 8.13.0 specifically, since that combination is newer than
+// anything verifiable from this environment. If the build fails with a
+// Kotlin/AGP compatibility error, bump this (and the matching kotlin-stdlib
+// version in android/app/build.gradle) to a newer 2.x release, e.g. 2.1.20.
+plugins {
+    id 'org.jetbrains.kotlin.android' version '2.0.21' apply false
 }
 
 apply from: "variables.gradle"
