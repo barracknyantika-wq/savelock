@@ -59,6 +59,72 @@ import Layout from '../layouts/Layout.astro';
         </form>
       </section>
 
+      <!-- SMS auto-detection (native Android shell only) -->
+      <section x-show="native" x-cloak class="paper mr-3 rotate-[-0.4deg] p-5">
+        <h2 class="font-display text-lg font-semibold text-ink">Auto-detect M-Pesa transactions</h2>
+        <p class="mt-1 text-sm font-light leading-relaxed text-ink-2">
+          When it's on, SaveLock reads only M-Pesa confirmation texts on this phone — nothing
+          else — to log spends and notify you within seconds. It never reads your other
+          messages, and no message content leaves this device.
+        </p>
+
+        <template x-if="!smsGranted && !smsDenied">
+          <button
+            type="button"
+            @click="enableSmsDetection"
+            class="pressable mt-3 min-h-12 w-full rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"
+          >
+            Turn on
+          </button>
+        </template>
+
+        <template x-if="smsDenied">
+          <p class="mt-3 text-sm font-medium text-brick">
+            Permission was denied. Enable it from your phone's Settings → Apps → SaveLock → Permissions to use auto-detect.
+          </p>
+        </template>
+
+        <template x-if="smsGranted">
+          <div class="mt-4 space-y-3 border-t border-dashed border-paper-line pt-4">
+            <label class="flex min-h-11 cursor-pointer items-center justify-between gap-3">
+              <span class="text-sm font-medium text-ink">Notify on spend</span>
+              <button
+                type="button"
+                role="switch"
+                :aria-checked="$store.sl.settings.smsNotifySpend"
+                @click="toggleSmsNotifySpend"
+                class="pressable relative h-7 w-12 shrink-0 rounded-full transition-colors"
+                :class="$store.sl.settings.smsNotifySpend ? 'bg-ochre' : 'bg-paper-line'"
+              >
+                <span
+                  class="absolute top-1 h-5 w-5 rounded-full bg-paper shadow transition-transform"
+                  :class="$store.sl.settings.smsNotifySpend ? 'translate-x-6' : 'translate-x-1'"
+                ></span>
+              </button>
+            </label>
+            <label class="flex min-h-11 cursor-pointer items-center justify-between gap-3">
+              <span class="text-sm font-medium text-ink">Notify on money received</span>
+              <button
+                type="button"
+                role="switch"
+                :aria-checked="$store.sl.settings.smsNotifyReceived"
+                @click="toggleSmsNotifyReceived"
+                class="pressable relative h-7 w-12 shrink-0 rounded-full transition-colors"
+                :class="$store.sl.settings.smsNotifyReceived ? 'bg-ochre' : 'bg-paper-line'"
+              >
+                <span
+                  class="absolute top-1 h-5 w-5 rounded-full bg-paper shadow transition-transform"
+                  :class="$store.sl.settings.smsNotifyReceived ? 'translate-x-6' : 'translate-x-1'"
+                ></span>
+              </button>
+            </label>
+            <p class="text-xs font-light text-ink-3">
+              Transactions are always logged silently in the background — these only control whether a notification pops up.
+            </p>
+          </div>
+        </template>
+      </section>
+
       <!-- Backup -->
       <section class="paper mr-3 rotate-[-0.5deg] p-5">
         <h2 class="font-display text-lg font-semibold text-ink">Backup</h2>
