@@ -57,7 +57,8 @@ class SmsMpesaPlugin : Plugin() {
     fun setNotificationPrefs(call: PluginCall) {
         val notifySpend = call.getBoolean("notifySpend", true) ?: true
         val notifyReceived = call.getBoolean("notifyReceived", true) ?: true
-        SmsReceiver.setNotificationPrefs(context, notifySpend, notifyReceived)
+        val notifyMode = call.getString("notifyMode", "always") ?: "always"
+        SmsReceiver.setNotificationPrefs(context, notifySpend, notifyReceived, notifyMode)
         call.resolve()
     }
 }

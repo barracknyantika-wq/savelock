@@ -19,6 +19,16 @@ import Layout from '../layouts/Layout.astro';
       The real money stays in your M-Shwari Lock or bank — SaveLock only keeps score.
     </p>
 
+    <p
+      x-show="milestoneBanner"
+      x-cloak
+      x-transition
+      class="mb-5 flex items-start gap-1.5 rounded-xl bg-ochre/10 px-3 py-2.5 text-sm text-ochre-deep"
+    >
+      <span x-html="$handCheck()"></span>
+      <span x-text="milestoneBanner"></span>
+    </p>
+
     <!-- Empty state -->
     <p
       x-show="!$store.sl.activeGoals.length"
@@ -84,10 +94,15 @@ import Layout from '../layouts/Layout.astro';
 
           <!-- Countdown -->
           <template x-if="!($store.sl.reached(g) || $store.sl.matured(g))">
-            <p class="mt-3 text-sm font-light text-ink-2">
-              <span class="font-display text-4xl font-bold tracking-tight text-ink" x-text="$store.sl.daysLeft(g)"></span>
-              <span x-text="($store.sl.daysLeft(g) === 1 ? ' day' : ' days') + ' until ' + $store.sl.dateShort(g.date)"></span>
-            </p>
+            <div>
+              <p class="mt-3 text-sm font-light text-ink-2">
+                <span class="font-display text-4xl font-bold tracking-tight text-ink" x-text="$store.sl.daysLeft(g)"></span>
+                <span x-text="($store.sl.daysLeft(g) === 1 ? ' day' : ' days') + ' until ' + $store.sl.dateShort(g.date)"></span>
+              </p>
+              <p x-show="projectedDate(g)" x-cloak class="mt-1 text-xs font-light text-ink-3">
+                At your recent pace, roughly <span class="font-semibold text-ink-2" x-text="projectedDate(g)"></span>
+              </p>
+            </div>
           </template>
 
           <div class="mt-4 flex items-center justify-between gap-3 border-t border-dashed border-paper-line pt-3.5">

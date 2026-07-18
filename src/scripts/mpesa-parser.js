@@ -76,6 +76,26 @@ const RULES = [
   ],
 ];
 
+// Best-effort category guess from the counterparty name, for spends only —
+// always overridable by the user, never trusted blindly. Order matters:
+// first matching rule wins. Falls back to "Other" rather than a wrong guess.
+const CATEGORY_RULES = [
+  ['Transport', /\b(uber|bolt|little cab|matatu|sgr|shuttle|taxi)\b/i],
+  ['Bills', /\b(kplc|nairobi water|dstv|gotv|startimes|zuku|utility|utilities)\b/i],
+  ['Food', /\b(java|kfc|pizza|naivas|quickmart|carrefour|tuskys|chandarana|supermarket|restaurant|eatery|hotel|cafe|butchery|bakery)\b/i],
+  ['Shopping', /\b(shop|mall|store|boutique|mart)\b/i],
+];
+
+export function guessCategory(counterparty, subtype) {
+  if (subtype === 'airtime') return 'Airtime';
+  if (subtype === 'withdraw') return 'Other';
+  const name = counterparty || '';
+  for (const [category, re] of CATEGORY_RULES) {
+    if (re.test(name)) return category;
+  }
+  return 'Other';
+}
+
 export function parseMpesaSms(body, receivedAtMs = Date.now()) {
   if (!body || typeof body !== 'string') return null;
   const text = body.replace(/\s+/g, ' ').trim();
@@ -97,6 +117,7 @@ export function parseMpesaSms(body, receivedAtMs = Date.now()) {
         subtype,
         amount,
         counterparty,
+        category: type === 'spend' ? guessCategory(counterparty, subtype) : null,
         balance: num(text.match(BALANCE_RE)?.[1]),
         receivedAt: receivedAtMs,
       };

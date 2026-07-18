@@ -41,6 +41,7 @@ class SmsReceiver : BroadcastReceiver() {
         const val KEY_BUDGET_DAY = "budget_day"
         const val KEY_NOTIFY_SPEND = "notify_spend"
         const val KEY_NOTIFY_RECEIVED = "notify_received"
+        const val KEY_NOTIFY_MODE = "notify_mode" // "always" | "importantOnly"
         const val CHANNEL_ID = "transactions"
         const val QUEUE_CAP = 200
         const val PROCESSED_CAP = 300
@@ -69,10 +70,11 @@ class SmsReceiver : BroadcastReceiver() {
                 .apply()
         }
 
-        fun setNotificationPrefs(context: Context, notifySpend: Boolean, notifyReceived: Boolean) {
+        fun setNotificationPrefs(context: Context, notifySpend: Boolean, notifyReceived: Boolean, notifyMode: String) {
             prefs(context).edit()
                 .putBoolean(KEY_NOTIFY_SPEND, notifySpend)
                 .putBoolean(KEY_NOTIFY_RECEIVED, notifyReceived)
+                .putString(KEY_NOTIFY_MODE, notifyMode)
                 .apply()
         }
 
@@ -140,18 +142,22 @@ class SmsReceiver : BroadcastReceiver() {
             .putString(KEY_BUDGET_DAY, todayStr())
             .apply()
 
-        val text = if (limit <= 0) {
+        val hasLimit = limit > 0
+        val remaining = limit - newSpent
+        val overBudget = hasLimit && remaining < 0
+        val text = if (!hasLimit) {
             "Logged $currency ${fmt(tx.amount)} to ${tx.counterparty}."
+        } else if (!overBudget) {
+            "Logged $currency ${fmt(tx.amount)} to ${tx.counterparty}. $currency ${fmt(remaining)} left today."
         } else {
-            val remaining = limit - newSpent
-            if (remaining >= 0) {
-                "Logged $currency ${fmt(tx.amount)} to ${tx.counterparty}. $currency ${fmt(remaining)} left today."
-            } else {
-                "$currency ${fmt(tx.amount)} logged. You're $currency ${fmt(-remaining)} over today's limit."
-            }
+            "$currency ${fmt(tx.amount)} logged. You're $currency ${fmt(-remaining)} over today's limit."
         }
 
-        if (sp.getBoolean(KEY_NOTIFY_SPEND, true)) {
+        // "importantOnly" mode still logs every spend silently (already done
+        // above) — it only skips the notification for in-budget spends.
+        val mode = sp.getString(KEY_NOTIFY_MODE, "always") ?: "always"
+        val shouldNotify = sp.getBoolean(KEY_NOTIFY_SPEND, true) && (mode != "importantOnly" || overBudget)
+        if (shouldNotify) {
             notify(context, tx.mpesaCode, "SaveLock", text)
         }
     }
@@ -197,6 +203,7 @@ class SmsReceiver : BroadcastReceiver() {
         put("subtype", tx.subtype)
         put("amount", tx.amount)
         put("counterparty", tx.counterparty)
+        put("category", tx.category ?: JSONObject.NULL)
         put("balance", tx.balance ?: JSONObject.NULL)
         put("receivedAt", tx.receivedAt)
     }

@@ -12,6 +12,7 @@ data class MpesaTransaction(
     val subtype: String,
     val amount: Double,
     val counterparty: String,
+    val category: String?, // null for "received" — categories are a spend concept
     val balance: Double?,
     val receivedAt: Long
 )
@@ -31,6 +32,31 @@ object MpesaParser {
 
     private fun clean(name: String): String =
         name.removeSuffix(".").replace(Regex("\\s+"), " ").trim()
+
+    // Best-effort category guess from the counterparty name, for spends
+    // only — always overridable by the user, never trusted blindly. Order
+    // matters: first matching rule wins. Falls back to "Other" rather than
+    // a wrong guess. Kept in sync by hand with mpesa-parser.js's
+    // CATEGORY_RULES / guessCategory.
+    private val CATEGORY_RULES = listOf(
+        "Transport" to Regex("\\b(uber|bolt|little cab|matatu|sgr|shuttle|taxi)\\b", RegexOption.IGNORE_CASE),
+        "Bills" to Regex("\\b(kplc|nairobi water|dstv|gotv|startimes|zuku|utility|utilities)\\b", RegexOption.IGNORE_CASE),
+        "Food" to Regex(
+            "\\b(java|kfc|pizza|naivas|quickmart|carrefour|tuskys|chandarana|supermarket|restaurant|eatery|hotel|cafe|butchery|bakery)\\b",
+            RegexOption.IGNORE_CASE
+        ),
+        "Shopping" to Regex("\\b(shop|mall|store|boutique|mart)\\b", RegexOption.IGNORE_CASE),
+    )
+
+    fun guessCategory(counterparty: String?, subtype: String): String {
+        if (subtype == "airtime") return "Airtime"
+        if (subtype == "withdraw") return "Other"
+        val name = counterparty ?: ""
+        for ((category, re) in CATEGORY_RULES) {
+            if (re.containsMatchIn(name)) return category
+        }
+        return "Other"
+    }
 
     private data class Rule(val type: String, val subtype: String, val match: (String) -> String?)
 
@@ -80,6 +106,7 @@ object MpesaParser {
                 subtype = rule.subtype,
                 amount = amount,
                 counterparty = counterparty,
+                category = if (rule.type == "spend") guessCategory(counterparty, rule.subtype) else null,
                 balance = num(BALANCE_RE.find(text)?.groupValues?.get(1)),
                 receivedAt = receivedAtMs
             )

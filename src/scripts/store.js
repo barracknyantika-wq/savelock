@@ -3,6 +3,8 @@
 
 const KEY = 'savelock:v1';
 const HISTORY_CAP = 180;
+const SPEND_LOG_CAP = 500;
+const MILESTONES = [25, 50, 75, 100];
 
 export function todayStr(d = new Date()) {
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -37,6 +39,8 @@ function uid() {
     : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+const DEFAULT_CATEGORIES = ['Food', 'Transport', 'Airtime', 'Bills', 'Shopping', 'Other'];
+
 function defaultState() {
   return {
     version: 1,
@@ -45,10 +49,24 @@ function defaultState() {
       currency: 'KSh',
       smsNotifySpend: true,
       smsNotifyReceived: true,
+      // 'always' notifies every detected spend; 'importantOnly' only
+      // notifies when a spend pushes the day over budget (still logs
+      // silently either way — this only controls the notification).
+      smsNotifyMode: 'always',
+      categories: [...DEFAULT_CATEGORIES],
+      reminderMorningEnabled: false,
+      reminderMorningTime: '08:00',
+      reminderEveningEnabled: false,
+      reminderEveningTime: '20:00',
+      weeklySummaryEnabled: false,
     },
     day: { date: todayStr(), spends: [] },
     streak: { count: 0 },
     history: [],
+    // Flat, capped log of every past (already-rolled-over) day's spends,
+    // category intact — day.spends only holds *today's* still-editable
+    // list, so category breakdowns need this to see further back.
+    spendLog: [],
     goals: [],
     breaks: [],
     // M-Pesa transaction codes already recorded, native or manual dedup —
@@ -71,6 +89,7 @@ function load() {
       day: saved.day && saved.day.date ? saved.day : base.day,
       streak: { ...base.streak, ...(saved.streak || {}) },
       history: Array.isArray(saved.history) ? saved.history : [],
+      spendLog: Array.isArray(saved.spendLog) ? saved.spendLog : [],
       goals: Array.isArray(saved.goals) ? saved.goals : [],
       breaks: Array.isArray(saved.breaks) ? saved.breaks : [],
       processedMpesaCodes: Array.isArray(saved.processedMpesaCodes) ? saved.processedMpesaCodes : [],
@@ -93,10 +112,10 @@ export function registerStore(Alpine) {
     },
 
     persist() {
-      const { version, settings, day, streak, history, goals, breaks, processedMpesaCodes } = this;
+      const { version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes } = this;
       localStorage.setItem(
         KEY,
-        JSON.stringify({ version, settings, day, streak, history, goals, breaks, processedMpesaCodes })
+        JSON.stringify({ version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes })
       );
       window.dispatchEvent(new CustomEvent('savelock:persist'));
     },
@@ -128,6 +147,9 @@ export function registerStore(Alpine) {
       let spends = this.day.spends;
       while (date < today) {
         const limit = this.settings.dailyLimit;
+        if (spends.length) {
+          this.spendLog.push(...spends);
+        }
         if (limit > 0) {
           const spent = spends.reduce((s, x) => s + x.amount, 0);
           this.streak.count = spent <= limit ? this.streak.count + 1 : 0;
@@ -138,6 +160,9 @@ export function registerStore(Alpine) {
         }
         date = addDays(date, 1);
         spends = [];
+      }
+      if (this.spendLog.length > SPEND_LOG_CAP) {
+        this.spendLog = this.spendLog.slice(-SPEND_LOG_CAP);
       }
       this.day = { date: today, spends: [] };
       this.persist();
@@ -191,14 +216,21 @@ export function registerStore(Alpine) {
       this.persist();
     },
 
-    logSpend(amount, note = '') {
+    logSpend(amount, note = '', category = 'Other') {
       this.rollover();
-      this.day.spends.push({ id: uid(), amount, note, at: Date.now() });
+      this.day.spends.push({ id: uid(), amount, note, category, at: Date.now() });
       this.persist();
     },
 
     deleteSpend(id) {
       this.day.spends = this.day.spends.filter((s) => s.id !== id);
+      this.persist();
+    },
+
+    setSpendCategory(id, category) {
+      const spend = this.day.spends.find((s) => s.id === id) || this.spendLog.find((s) => s.id === id);
+      if (!spend) return;
+      spend.category = category;
       this.persist();
     },
 
@@ -210,6 +242,84 @@ export function registerStore(Alpine) {
     setSmsNotifyReceived(v) {
       this.settings.smsNotifyReceived = !!v;
       this.persist();
+    },
+
+    setSmsNotifyMode(mode) {
+      this.settings.smsNotifyMode = mode === 'importantOnly' ? 'importantOnly' : 'always';
+      this.persist();
+    },
+
+    setReminderMorning(enabled, time) {
+      this.settings.reminderMorningEnabled = !!enabled;
+      if (time) this.settings.reminderMorningTime = time;
+      this.persist();
+    },
+
+    setReminderEvening(enabled, time) {
+      this.settings.reminderEveningEnabled = !!enabled;
+      if (time) this.settings.reminderEveningTime = time;
+      this.persist();
+    },
+
+    setWeeklySummary(enabled) {
+      this.settings.weeklySummaryEnabled = !!enabled;
+      this.persist();
+    },
+
+    // ---- categories -------------------------------------------------------
+
+    addCategory(name) {
+      const clean = (name || '').trim().slice(0, 24);
+      if (!clean || this.settings.categories.includes(clean)) return;
+      this.settings.categories.push(clean);
+      this.persist();
+    },
+
+    renameCategory(oldName, newName) {
+      const clean = (newName || '').trim().slice(0, 24);
+      if (!clean || oldName === 'Other') return;
+      const idx = this.settings.categories.indexOf(oldName);
+      if (idx === -1 || this.settings.categories.includes(clean)) return;
+      this.settings.categories[idx] = clean;
+      for (const s of [...this.day.spends, ...this.spendLog]) {
+        if (s.category === oldName) s.category = clean;
+      }
+      this.persist();
+    },
+
+    // "Other" always exists as the fallback category and can't be removed.
+    removeCategory(name) {
+      if (name === 'Other') return;
+      this.settings.categories = this.settings.categories.filter((c) => c !== name);
+      for (const s of [...this.day.spends, ...this.spendLog]) {
+        if (s.category === name) s.category = 'Other';
+      }
+      this.persist();
+    },
+
+    // Category totals over the trailing `days` window (today inclusive),
+    // highest spend first.
+    categoryBreakdown(days) {
+      const cutoff = Date.now() - days * 86400000;
+      const all = [...this.spendLog, ...this.day.spends].filter((s) => s.at >= cutoff);
+      const totals = {};
+      let grandTotal = 0;
+      for (const s of all) {
+        const cat = s.category || 'Other';
+        totals[cat] = (totals[cat] || 0) + s.amount;
+        grandTotal += s.amount;
+      }
+      return Object.entries(totals)
+        .map(([category, total]) => ({
+          category,
+          total: Math.round(total * 100) / 100,
+          pct: grandTotal > 0 ? total / grandTotal : 0,
+        }))
+        .sort((a, b) => b.total - a.total);
+    },
+
+    topCategories(days, n = 3) {
+      return this.categoryBreakdown(days).slice(0, n);
     },
 
     // ---- SMS auto-detected transactions (native Android shell only) -----
@@ -239,6 +349,7 @@ export function registerStore(Alpine) {
         id: uid(),
         amount,
         note: tx.counterparty || '',
+        category: tx.category || 'Other',
         at: tx.receivedAt || Date.now(),
         source: 'sms',
         mpesaCode: tx.mpesaCode,
@@ -264,9 +375,9 @@ export function registerStore(Alpine) {
       if (!goal) return null;
       const [spend] = this.day.spends.splice(idx, 1);
       spend.classification = 'savings-transfer';
-      goal.saved = Math.round((goal.saved + spend.amount) * 100) / 100;
+      const milestones = this.creditGoal(goal, spend.amount);
       this.persist();
-      return { spend, goal };
+      return { spend, goal, milestones };
     },
 
     // ---- goals ----------------------------------------------------------
@@ -291,15 +402,67 @@ export function registerStore(Alpine) {
         date,
         createdAt: todayStr(),
         status: 'active',
+        milestonesHit: [],
+        savedHistory: [{ at: new Date().toISOString(), amount: 0 }],
       });
       this.persist();
     },
 
+    // Adds `amount` to a goal's saved total and returns any milestone
+    // thresholds (25/50/75/100) newly crossed by this change, so the UI can
+    // show a one-off celebration rather than just a number changing.
+    creditGoal(goal, amount) {
+      goal.saved = Math.round((goal.saved + amount) * 100) / 100;
+      return this.recordSavedProgress(goal);
+    },
+
+    recordSavedProgress(goal) {
+      if (!Array.isArray(goal.milestonesHit)) goal.milestonesHit = [];
+      if (!Array.isArray(goal.savedHistory)) goal.savedHistory = [];
+      goal.savedHistory.push({ at: new Date().toISOString(), amount: goal.saved });
+      if (goal.savedHistory.length > 200) goal.savedHistory = goal.savedHistory.slice(-200);
+      const pct = this.progress(goal) * 100;
+      const newly = MILESTONES.filter((m) => pct >= m && !goal.milestonesHit.includes(m));
+      goal.milestonesHit.push(...newly);
+      return newly;
+    },
+
+    // Sets the saved total directly (the user telling us what's actually in
+    // the real lock right now) rather than adding an increment.
     updateSaved(id, amount) {
       const g = this.goals.find((x) => x.id === id);
-      if (!g) return;
+      if (!g) return [];
       g.saved = amount;
+      const milestones = this.recordSavedProgress(g);
       this.persist();
+      return milestones;
+    },
+
+    // Average KSh/day saved over the trailing 30 days of this goal's
+    // history (or its whole history if younger). Null when there isn't
+    // enough of a track record yet to mean anything.
+    pace(g) {
+      const history = Array.isArray(g.savedHistory) ? g.savedHistory : [];
+      if (history.length < 2) return null;
+      const cutoff = Date.now() - 30 * 86400000;
+      const windowed = history.filter((h) => new Date(h.at).getTime() >= cutoff);
+      const points = windowed.length >= 2 ? windowed : history;
+      const first = points[0];
+      const last = points[points.length - 1];
+      const days = (new Date(last.at).getTime() - new Date(first.at).getTime()) / 86400000;
+      if (days <= 0) return null;
+      return (last.amount - first.amount) / days;
+    },
+
+    // Rough "at this rate" finish date, or null if there's no positive pace
+    // to project from yet.
+    projectedFinishDate(g) {
+      if (this.reached(g)) return todayStr();
+      const remaining = g.target - g.saved;
+      if (remaining <= 0) return todayStr();
+      const p = this.pace(g);
+      if (!p || p <= 0) return null;
+      return addDays(todayStr(), Math.ceil(remaining / p));
     },
 
     daysLeft(g) {
@@ -353,13 +516,13 @@ export function registerStore(Alpine) {
     // ---- backup ---------------------------------------------------------
 
     exportData() {
-      const { version, settings, day, streak, history, goals, breaks, processedMpesaCodes } = this;
+      const { version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes } = this;
       return JSON.stringify(
         {
           app: 'savelock',
           version,
           exportedAt: new Date().toISOString(),
-          data: { version, settings, day, streak, history, goals, breaks, processedMpesaCodes },
+          data: { version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes },
         },
         null,
         2

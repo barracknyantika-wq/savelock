@@ -75,6 +75,37 @@ export function sketchBars(days) {
   return `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true" style="width:100%;height:auto;display:block">${out}</svg>`;
 }
 
+function escapeXml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]);
+}
+
+// Horizontal sketchy bar chart of spend-by-category, highest first. Only
+// the relative bars + category names live in the SVG (matching sketchBars'
+// minimal-data-in-chart approach) — exact amounts are rendered as normal
+// text alongside it so currency formatting stays with the caller.
+// items: [{ category, total, pct }], already sorted highest-first.
+export function categoryBars(items) {
+  if (!items.length) {
+    return `<svg viewBox="0 0 300 32" aria-hidden="true" style="width:100%;height:auto;display:block"><text x="0" y="20" font-size="12" font-family="inherit" fill="${PALETTE.label}">Nothing logged yet.</text></svg>`;
+  }
+  const W = 300;
+  const rowH = 28;
+  const H = items.length * rowH + 8;
+  const max = Math.max(1, ...items.map((i) => i.total));
+  const labelW = 76;
+  const barMaxW = W - labelW - 8;
+  let out = '';
+  items.forEach((item, i) => {
+    const y = i * rowH + 6;
+    const bw = Math.max(4, (item.total / max) * barMaxW);
+    const rot = (((i * 41) % 5) - 2) * 0.4;
+    const color = i === 0 ? PALETTE.lit : 'rgba(176, 126, 31, 0.5)';
+    out += `<text x="0" y="${(y + 12).toFixed(1)}" font-size="11" font-family="inherit" fill="${PALETTE.label}">${escapeXml(item.category)}</text>`;
+    out += `<rect x="${labelW}" y="${(y + 2).toFixed(1)}" width="${bw.toFixed(1)}" height="14" rx="4" fill="${color}" transform="rotate(${rot} ${labelW} ${(y + 9).toFixed(1)})"/>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true" style="width:100%;height:auto;display:block">${out}</svg>`;
+}
+
 // Hand-drawn squiggle underline for positive states.
 export function squiggle(color = PALETTE.lit) {
   return `<svg viewBox="0 0 120 8" aria-hidden="true" style="width:7rem;height:0.5rem;display:block"><path d="M2 5 C 18 1, 32 7, 50 4 S 86 1.5, 118 5" fill="none" stroke="${color}" stroke-width="2.6" stroke-linecap="round"/></svg>`;

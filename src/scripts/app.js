@@ -1,6 +1,6 @@
 import Alpine from 'alpinejs';
 import { registerStore, parseAmount, todayStr } from './store.js';
-import { tickGauge, sketchBars, squiggle, handCheck } from './viz.js';
+import { tickGauge, sketchBars, categoryBars, squiggle, handCheck } from './viz.js';
 import {
   isNative,
   initNativeBridge,
@@ -8,6 +8,8 @@ import {
   checkSmsPermission,
   requestSmsPermission,
   nativeReload,
+  syncReminders,
+  syncWeeklySummary,
 } from './native-bridge.js';
 
 window.Alpine = Alpine;
@@ -20,14 +22,32 @@ Alpine.magic('squiggle', () => squiggle);
 Alpine.magic('handCheck', () => handCheck);
 Alpine.magic('gauge', () => (ratio, opts) => tickGauge(ratio, opts));
 
+const MILESTONE_COPY = {
+  25: (name) => `Quarter of the way to ${name} — keep going.`,
+  50: (name) => `Halfway to ${name}. Nice pace.`,
+  75: (name) => `75% there — ${name} is almost within reach.`,
+  100: (name) => `${name} is fully funded!`,
+};
+
+// Picks the single highest newly-crossed threshold to announce, so a big
+// jump across several milestones at once still reads as one clean moment.
+function milestoneText(milestones, goalName) {
+  if (!milestones?.length) return '';
+  const top = Math.max(...milestones);
+  return MILESTONE_COPY[top]?.(goalName) || '';
+}
+
 Alpine.data('todayPage', () => ({
   sheet: false,
   amount: '',
   note: '',
+  category: 'Other',
   limitInput: '',
   quick: [50, 100, 200],
   reclassifyId: null,
+  categoryEditId: null,
   confirmBanner: '',
+  insightDays: 7,
 
   get allowanceGauge() {
     const s = store();
@@ -42,11 +62,36 @@ Alpine.data('todayPage', () => ({
     return store().day.spends.find((s) => s.id === this.reclassifyId) || null;
   },
 
+  get categoryEditSpend() {
+    return store().day.spends.find((s) => s.id === this.categoryEditId) || null;
+  },
+
   get activeGoals() {
     return store().activeGoals;
   },
 
+  get categories() {
+    return store().settings.categories;
+  },
+
+  get insightBreakdown() {
+    return store().categoryBreakdown(this.insightDays);
+  },
+
+  get insightChart() {
+    return categoryBars(this.insightBreakdown);
+  },
+
+  get topCategories() {
+    return store().topCategories(this.insightDays, 3);
+  },
+
+  get insightTotal() {
+    return this.insightBreakdown.reduce((s, c) => s + c.total, 0);
+  },
+
   openSheet() {
+    this.category = 'Other';
     this.sheet = true;
     this.$nextTick(() => this.$refs.amountInput?.focus());
   },
@@ -55,13 +100,23 @@ Alpine.data('todayPage', () => ({
     this.reclassifyId = spendId;
   },
 
+  openCategoryEdit(spendId) {
+    this.categoryEditId = spendId;
+  },
+
+  setCategory(category) {
+    store().setSpendCategory(this.categoryEditId, category);
+    this.categoryEditId = null;
+  },
+
   confirmReclassify(goalId) {
     const spend = this.reclassifySpend;
     const res = store().reclassifyAsSavings(this.reclassifyId, goalId);
     this.reclassifyId = null;
     if (!res) return;
-    this.confirmBanner = `${store().money(spend.amount)} moved to savings — added to your goal, not counted as spending.`;
-    setTimeout(() => (this.confirmBanner = ''), 4000);
+    const milestone = milestoneText(res.milestones, res.goal.name);
+    this.confirmBanner = `${store().money(spend.amount)} moved to savings — added to your goal, not counted as spending.${milestone ? ' ' + milestone : ''}`;
+    setTimeout(() => (this.confirmBanner = ''), 5000);
   },
 
   logQuick(v) {
@@ -72,9 +127,10 @@ Alpine.data('todayPage', () => ({
   submitSpend() {
     const v = parseAmount(this.amount);
     if (!v) return;
-    store().logSpend(v, this.note.trim());
+    store().logSpend(v, this.note.trim(), this.category);
     this.amount = '';
     this.note = '';
+    this.category = 'Other';
     this.sheet = false;
   },
 
@@ -97,10 +153,16 @@ Alpine.data('goalsPage', () => ({
   updAmount: '',
   breakId: null,
   breakText: '',
+  milestoneBanner: '',
   minDate: todayStr(),
 
   goalGauge(g) {
     return tickGauge(store().progress(g));
+  },
+
+  projectedDate(g) {
+    const d = store().projectedFinishDate(g);
+    return d ? store().dateShort(d) : null;
   },
 
   openNew() {
@@ -129,8 +191,14 @@ Alpine.data('goalsPage', () => ({
   submitUpdate() {
     const v = parseAmount(this.updAmount);
     if (v === null) return;
-    store().updateSaved(this.updId, v);
+    const goal = store().goals.find((g) => g.id === this.updId);
+    const milestones = store().updateSaved(this.updId, v);
     this.updSheet = false;
+    const text = milestoneText(milestones, goal?.name || '');
+    if (text) {
+      this.milestoneBanner = text;
+      setTimeout(() => (this.milestoneBanner = ''), 5000);
+    }
   },
 
   get breakGoal() {
@@ -158,6 +226,9 @@ Alpine.data('settingsPage', () => ({
   eraseArmed: false,
   native: isNative(),
   smsPermState: null,
+  newCategory: '',
+  renamingCategory: null,
+  renameInput: '',
 
   async init() {
     const s = store();
@@ -187,6 +258,52 @@ Alpine.data('settingsPage', () => ({
   toggleSmsNotifyReceived() {
     store().setSmsNotifyReceived(!store().settings.smsNotifyReceived);
     pushNotificationPrefs(store());
+  },
+
+  setSmsNotifyMode(mode) {
+    store().setSmsNotifyMode(mode);
+    pushNotificationPrefs(store());
+  },
+
+  addCategory() {
+    store().addCategory(this.newCategory);
+    this.newCategory = '';
+  },
+
+  startRename(cat) {
+    this.renamingCategory = cat;
+    this.renameInput = cat;
+  },
+
+  submitRename() {
+    store().renameCategory(this.renamingCategory, this.renameInput);
+    this.renamingCategory = null;
+    this.renameInput = '';
+  },
+
+  removeCategory(cat) {
+    store().removeCategory(cat);
+  },
+
+  toggleMorningReminder() {
+    store().setReminderMorning(!store().settings.reminderMorningEnabled);
+    syncReminders(store());
+  },
+
+  toggleEveningReminder() {
+    store().setReminderEvening(!store().settings.reminderEveningEnabled);
+    syncReminders(store());
+  },
+
+  saveReminderTimes() {
+    store().setReminderMorning(store().settings.reminderMorningEnabled, store().settings.reminderMorningTime);
+    store().setReminderEvening(store().settings.reminderEveningEnabled, store().settings.reminderEveningTime);
+    syncReminders(store());
+  },
+
+  toggleWeeklySummary() {
+    store().setWeeklySummary(!store().settings.weeklySummaryEnabled);
+    syncWeeklySummary(store());
   },
 
   saveLimit() {
