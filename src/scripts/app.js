@@ -7,6 +7,7 @@ import {
   pushNotificationPrefs,
   checkSmsPermission,
   requestSmsPermission,
+  nativeReload,
 } from './native-bridge.js';
 
 window.Alpine = Alpine;
@@ -221,7 +222,7 @@ Alpine.data('settingsPage', () => ({
       event.target.value = '';
     } else {
       this.importOk = true;
-      setTimeout(() => location.reload(), 600);
+      setTimeout(() => nativeReload(), 600);
     }
   },
 

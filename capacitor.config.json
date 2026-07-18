@@ -3,6 +3,9 @@
   "appName": "SaveLock",
   "webDir": "dist",
   "backgroundColor": "#0f0e0c",
+  "server": {
+    "html5mode": false
+  },
   "android": {
     "backgroundColor": "#0f0e0c"
   },

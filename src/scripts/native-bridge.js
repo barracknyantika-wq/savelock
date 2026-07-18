@@ -38,9 +38,43 @@ async function drain(store) {
   }
 }
 
+// Capacitor's bundled Android WebView server has no directory-index
+// resolution: a request to an extensionless path like /goals/ either falls
+// back to serving the root index.html (html5mode on, the old default here —
+// which silently showed Today again on every Goals/Settings tap) or gets no
+// response at all (html5mode off, our capacitor.config.json setting, with
+// nothing else changed). Either way, extensionless internal links never
+// reach the real page in the native shell — only requests with a file
+// extension do. So every same-origin link starting and ending with "/" gets
+// rewritten to point at its real index.html, but only inside the native
+// shell; the plain PWA/web build (and its offline service-worker cache,
+// which is keyed by the pretty "/goals/"-style URL) is untouched.
+export function fixNativeLinks(root = document) {
+  if (!isNative()) return;
+  root.querySelectorAll('a[href]').forEach((a) => {
+    const href = a.getAttribute('href');
+    if (href && href.startsWith('/') && href.endsWith('/')) {
+      a.setAttribute('href', href + 'index.html');
+    }
+  });
+}
+
+// Same underlying reason as fixNativeLinks: reloading the current page only
+// reaches the right content in the native shell if the reload target has a
+// file extension (otherwise it's the html5mode failure mode all over again,
+// this time on whatever non-root page called this).
+export function nativeReload() {
+  if (isNative() && location.pathname.endsWith('/')) {
+    location.href = location.pathname + 'index.html' + location.search;
+  } else {
+    location.reload();
+  }
+}
+
 export function initNativeBridge(store) {
   if (!isNative()) return;
 
+  fixNativeLinks();
   drain(store);
   pushBudget(store);
   pushNotificationPrefs(store);
