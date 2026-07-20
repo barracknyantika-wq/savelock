@@ -84,7 +84,7 @@ import Layout from '../layouts/Layout.astro';
               </p>
               <button
                 type="button"
-                @click="$store.sl.completeGoal(g.id)"
+                @click="$store.sl.completeGoal(g.id); $toast('Saved')"
                 class="pressable mt-3 min-h-11 w-full rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"
               >
                 Mark done

@@ -22,6 +22,24 @@ Alpine.magic('squiggle', () => squiggle);
 Alpine.magic('handCheck', () => handCheck);
 Alpine.magic('gauge', () => (ratio, opts) => tickGauge(ratio, opts));
 
+// A single global toast, shared by every page (rendered once in Layout.astro)
+// so any edit — a spend, a goal, a setting — gets the same immediate,
+// unmissable "did that work?" confirmation, however it was triggered.
+const TOAST_MS = 2200;
+Alpine.store('toast', {
+  message: '',
+  _timer: null,
+  show(message) {
+    this.message = message;
+    clearTimeout(this._timer);
+    this._timer = setTimeout(() => (this.message = ''), TOAST_MS);
+  },
+});
+function toast(message) {
+  Alpine.store('toast').show(message);
+}
+Alpine.magic('toast', () => toast);
+
 const MILESTONE_COPY = {
   25: (name) => `Quarter of the way to ${name} — keep going.`,
   50: (name) => `Halfway to ${name}. Nice pace.`,
@@ -107,6 +125,7 @@ Alpine.data('todayPage', () => ({
   setCategory(category) {
     store().setSpendCategory(this.categoryEditId, category);
     this.categoryEditId = null;
+    toast('Updated');
   },
 
   confirmReclassify(goalId) {
@@ -122,6 +141,7 @@ Alpine.data('todayPage', () => ({
   logQuick(v) {
     store().logSpend(v);
     if (navigator.vibrate) navigator.vibrate(15);
+    toast('Logged');
   },
 
   submitSpend() {
@@ -132,6 +152,7 @@ Alpine.data('todayPage', () => ({
     this.note = '';
     this.category = 'Other';
     this.sheet = false;
+    toast('Logged');
   },
 
   saveLimit() {
@@ -139,6 +160,7 @@ Alpine.data('todayPage', () => ({
     if (!v) return;
     store().setLimit(v);
     this.limitInput = '';
+    toast('Saved');
   },
 }));
 
@@ -178,6 +200,7 @@ Alpine.data('goalsPage', () => ({
     if (!name || !target || !this.gDate) return;
     store().addGoal(name, target, this.gDate);
     this.newSheet = false;
+    toast('Goal added');
   },
 
   openUpdate(g) {
@@ -199,6 +222,7 @@ Alpine.data('goalsPage', () => ({
       this.milestoneBanner = text;
       setTimeout(() => (this.milestoneBanner = ''), 5000);
     }
+    toast('Updated');
   },
 
   get breakGoal() {
@@ -215,6 +239,7 @@ Alpine.data('goalsPage', () => ({
     store().breakGoal(this.breakId);
     this.breakId = null;
     this.breakText = '';
+    toast('Recorded');
   },
 }));
 
@@ -253,21 +278,26 @@ Alpine.data('settingsPage', () => ({
   toggleSmsNotifySpend() {
     store().setSmsNotifySpend(!store().settings.smsNotifySpend);
     pushNotificationPrefs(store());
+    toast('Saved');
   },
 
   toggleSmsNotifyReceived() {
     store().setSmsNotifyReceived(!store().settings.smsNotifyReceived);
     pushNotificationPrefs(store());
+    toast('Saved');
   },
 
   setSmsNotifyMode(mode) {
     store().setSmsNotifyMode(mode);
     pushNotificationPrefs(store());
+    toast('Saved');
   },
 
   addCategory() {
+    if (!this.newCategory.trim()) return;
     store().addCategory(this.newCategory);
     this.newCategory = '';
+    toast('Added');
   },
 
   startRename(cat) {
@@ -279,42 +309,50 @@ Alpine.data('settingsPage', () => ({
     store().renameCategory(this.renamingCategory, this.renameInput);
     this.renamingCategory = null;
     this.renameInput = '';
+    toast('Updated');
   },
 
   removeCategory(cat) {
     store().removeCategory(cat);
+    toast('Removed');
   },
 
   toggleMorningReminder() {
     store().setReminderMorning(!store().settings.reminderMorningEnabled);
     syncReminders(store());
+    toast('Saved');
   },
 
   toggleEveningReminder() {
     store().setReminderEvening(!store().settings.reminderEveningEnabled);
     syncReminders(store());
+    toast('Saved');
   },
 
   saveReminderTimes() {
     store().setReminderMorning(store().settings.reminderMorningEnabled, store().settings.reminderMorningTime);
     store().setReminderEvening(store().settings.reminderEveningEnabled, store().settings.reminderEveningTime);
     syncReminders(store());
+    toast('Saved');
   },
 
   toggleWeeklySummary() {
     store().setWeeklySummary(!store().settings.weeklySummaryEnabled);
     syncWeeklySummary(store());
+    toast('Saved');
   },
 
   saveLimit() {
     const v = parseAmount(this.limitInput);
     if (!v) return;
     store().setLimit(v);
+    toast('Saved');
   },
 
   saveCurrency() {
     store().setCurrency(this.currencyInput);
     this.currencyInput = store().settings.currency;
+    toast('Saved');
   },
 
   exportBackup() {
@@ -326,6 +364,7 @@ Alpine.data('settingsPage', () => ({
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    toast('Exported');
   },
 
   async importBackup(event) {

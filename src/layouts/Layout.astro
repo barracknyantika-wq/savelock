@@ -39,6 +39,24 @@ const tabs = [
   <body class="canvas-grain min-h-dvh font-sans text-cream antialiased">
     <slot />
 
+    <!-- global toast: one confirmation surface, shared by every page -->
+    <div
+      x-data
+      x-show="$store.toast.message"
+      x-cloak
+      x-transition:enter="transition duration-200 ease-out"
+      x-transition:enter-start="opacity-0 translate-y-2"
+      x-transition:enter-end="opacity-100 translate-y-0"
+      x-transition:leave="transition duration-150 ease-in"
+      x-transition:leave-start="opacity-100 translate-y-0"
+      x-transition:leave-end="opacity-0 translate-y-2"
+      class="fixed bottom-[calc(env(safe-area-inset-bottom)+86px)] left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-semibold text-cream shadow-[0_6px_20px_-6px_rgba(0,0,0,0.7)]"
+      role="status"
+      aria-live="polite"
+    >
+      <span x-text="$store.toast.message"></span>
+    </div>
+
     <!-- floating pill nav, off the bottom edge -->
     <nav
       class="fixed bottom-[calc(env(safe-area-inset-bottom)+14px)] left-1/2 z-40 w-[min(88%,340px)] -translate-x-1/2"

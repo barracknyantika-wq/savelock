@@ -247,7 +247,7 @@ import Layout from '../layouts/Layout.astro';
                 </button>
                 <button
                   type="button"
-                  @click="$store.sl.deleteSpend(s.id)"
+                  @click="$store.sl.deleteSpend(s.id); $toast('Deleted')"
                   class="pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-ink-3 active:text-brick"
                   :aria-label="'Delete spend of ' + $store.sl.money(s.amount)"
                 >
