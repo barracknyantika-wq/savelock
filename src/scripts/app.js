@@ -1,5 +1,5 @@
 import Alpine from 'alpinejs';
-import { registerStore, parseAmount, todayStr } from './store.js';
+import { registerStore, parseAmount, todayStr, BADGE_DEFS } from './store.js';
 import { tickGauge, sketchBars, categoryBars, squiggle, handCheck } from './viz.js';
 import {
   isNative,
@@ -391,6 +391,57 @@ Alpine.data('settingsPage', () => ({
     store().eraseAll();
     this.eraseArmed = false;
     this.limitInput = '';
+  },
+}));
+
+Alpine.data('badgesPage', () => ({
+  challengeInput: '',
+
+  get badgeDefs() {
+    return BADGE_DEFS;
+  },
+
+  isEarned(id) {
+    return store().earnedBadgeIds.includes(id);
+  },
+
+  earnedAt(id) {
+    const b = store().badges.find((x) => x.id === id);
+    return b ? store().dateShort(b.earnedAt) : null;
+  },
+
+  get stats() {
+    return store().stats;
+  },
+
+  get challenge() {
+    return store().challenge;
+  },
+
+  get challengeSavedSoFar() {
+    return store().challengeSavedSoFar();
+  },
+
+  get challengeDaysLeft() {
+    return store().challengeDaysLeft();
+  },
+
+  get challengeHistory() {
+    return [...store().challengeHistory].reverse();
+  },
+
+  startChallenge() {
+    const v = parseAmount(this.challengeInput);
+    if (!v) return;
+    if (store().startChallenge(v)) {
+      this.challengeInput = '';
+      toast('Challenge started');
+    }
+  },
+
+  cancelChallenge() {
+    store().cancelChallenge();
+    toast('Cancelled');
   },
 }));
 

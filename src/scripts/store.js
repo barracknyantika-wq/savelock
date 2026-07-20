@@ -42,6 +42,20 @@ function uid() {
 
 const DEFAULT_CATEGORIES = ['Food', 'Transport', 'Airtime', 'Bills', 'Shopping', 'Other'];
 
+// Badges are earned once and kept forever, even if the underlying stat
+// later regresses (e.g. a streak resetting doesn't un-earn "First Week").
+// Definitions live in code, not state — only which ids were earned (and
+// when) is persisted.
+export const BADGE_DEFS = [
+  { id: 'first_week', name: 'First Week', description: 'Stayed under budget for 7 days straight.' },
+  { id: 'streak_30', name: 'Thirty Strong', description: 'Stayed under budget for 30 days straight.' },
+  { id: 'streak_100', name: 'Centurion', description: 'Stayed under budget for 100 days straight.' },
+  { id: 'first_goal', name: 'Goal Getter', description: 'Completed your first savings goal.' },
+  { id: 'big_saver', name: 'Big Saver', description: 'Closed out a day having spent absolutely nothing.' },
+];
+
+const CHALLENGE_DAYS = 7;
+
 function defaultState() {
   return {
     version: 1,
@@ -78,6 +92,13 @@ function defaultState() {
     // only, never counted toward spentToday (repaying or being charged for
     // Fuliza isn't a new expense, it's clearing/servicing a past one).
     fulizaEvents: [],
+    // ---- engagement: badges + optional weekly challenge ----------------
+    badges: [],
+    stats: { longestStreak: 0, biggestSingleDaySave: 0, biggestSingleDaySaveDate: null },
+    // Opt-in only, never auto-started and never auto-renewed. null when no
+    // challenge is running.
+    challenge: null,
+    challengeHistory: [],
   };
 }
 
@@ -99,6 +120,10 @@ function load() {
       breaks: Array.isArray(saved.breaks) ? saved.breaks : [],
       processedMpesaCodes: Array.isArray(saved.processedMpesaCodes) ? saved.processedMpesaCodes : [],
       fulizaEvents: Array.isArray(saved.fulizaEvents) ? saved.fulizaEvents : [],
+      badges: Array.isArray(saved.badges) ? saved.badges : [],
+      stats: { ...base.stats, ...(saved.stats || {}) },
+      challenge: saved.challenge && saved.challenge.startDate ? saved.challenge : null,
+      challengeHistory: Array.isArray(saved.challengeHistory) ? saved.challengeHistory : [],
     };
   } catch {
     return base;
@@ -118,10 +143,16 @@ export function registerStore(Alpine) {
     },
 
     persist() {
-      const { version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes, fulizaEvents } = this;
+      const {
+        version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes,
+        fulizaEvents, badges, stats, challenge, challengeHistory,
+      } = this;
       localStorage.setItem(
         KEY,
-        JSON.stringify({ version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes, fulizaEvents })
+        JSON.stringify({
+          version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes,
+          fulizaEvents, badges, stats, challenge, challengeHistory,
+        })
       );
       window.dispatchEvent(new CustomEvent('savelock:persist'));
     },
@@ -163,6 +194,7 @@ export function registerStore(Alpine) {
           if (this.history.length > HISTORY_CAP) {
             this.history = this.history.slice(-HISTORY_CAP);
           }
+          this.recordClosedDayStats(limit, spent);
         }
         date = addDays(date, 1);
         spends = [];
@@ -171,7 +203,101 @@ export function registerStore(Alpine) {
         this.spendLog = this.spendLog.slice(-SPEND_LOG_CAP);
       }
       this.day = { date: today, spends: [] };
+      this.checkChallengeCompletion();
       this.persist();
+    },
+
+    // ---- engagement: badges + stats -----------------------------------
+
+    awardBadge(id) {
+      if (this.badges.some((b) => b.id === id)) return false;
+      this.badges.push({ id, earnedAt: todayStr() });
+      return true;
+    },
+
+    get earnedBadgeIds() {
+      return this.badges.map((b) => b.id);
+    },
+
+    // Updates the running "longest streak"/"biggest single-day save" stats
+    // and awards any streak/saving badges newly crossed by this closed day.
+    recordClosedDayStats(limit, spent) {
+      if (this.streak.count > this.stats.longestStreak) {
+        this.stats.longestStreak = this.streak.count;
+      }
+      if (spent <= limit) {
+        const saved = Math.round((limit - spent) * 100) / 100;
+        if (saved > this.stats.biggestSingleDaySave) {
+          this.stats.biggestSingleDaySave = saved;
+          this.stats.biggestSingleDaySaveDate = addDays(todayStr(), -1);
+        }
+        if (spent === 0) this.awardBadge('big_saver');
+      }
+      if (this.streak.count >= 7) this.awardBadge('first_week');
+      if (this.streak.count >= 30) this.awardBadge('streak_30');
+      if (this.streak.count >= 100) this.awardBadge('streak_100');
+    },
+
+    // ---- engagement: opt-in weekly challenge ---------------------------
+    // "Save an extra KshX this week" — never starts or renews itself, and
+    // missing the target is never logged as anything worse than "not met".
+
+    startChallenge(targetExtra) {
+      if (this.challenge || !(targetExtra > 0)) return false;
+      this.challenge = { targetExtra: Math.round(targetExtra * 100) / 100, startDate: todayStr() };
+      this.persist();
+      return true;
+    },
+
+    cancelChallenge() {
+      if (!this.challenge) return;
+      this.challengeHistory.push({ ...this.challenge, endDate: todayStr(), status: 'cancelled', savedAmount: this.challengeSavedSoFar() });
+      this.challenge = null;
+      this.persist();
+    },
+
+    // Sum of each closed day's under-budget margin since the challenge
+    // started, plus today's live margin if it's currently positive. Days
+    // over budget contribute nothing (never negative) — the challenge only
+    // rewards saving, it doesn't compound a bad day's penalty.
+    challengeSavedSoFar() {
+      if (!this.challenge) return 0;
+      const start = this.challenge.startDate;
+      let total = 0;
+      for (const h of this.history) {
+        if (h.date >= start && h.date < todayStr() && h.spent <= h.limit) {
+          total += h.limit - h.spent;
+        }
+      }
+      if (this.hasLimit && this.remaining > 0) total += this.remaining;
+      return Math.round(total * 100) / 100;
+    },
+
+    challengeDaysElapsed() {
+      if (!this.challenge) return 0;
+      return Math.max(0, daysBetween(this.challenge.startDate, todayStr()));
+    },
+
+    challengeDaysLeft() {
+      if (!this.challenge) return 0;
+      return Math.max(0, CHALLENGE_DAYS - this.challengeDaysElapsed());
+    },
+
+    // Resolves the current challenge once its window has elapsed —
+    // called on every rollover so it settles even if the app wasn't open
+    // on the exact final day.
+    checkChallengeCompletion() {
+      if (!this.challenge) return;
+      if (this.challengeDaysElapsed() < CHALLENGE_DAYS) return;
+      const savedAmount = this.challengeSavedSoFar();
+      const achieved = savedAmount >= this.challenge.targetExtra;
+      this.challengeHistory.push({
+        ...this.challenge,
+        endDate: todayStr(),
+        status: achieved ? 'passed' : 'missed',
+        savedAmount,
+      });
+      this.challenge = null;
     },
 
     // ---- daily allowance ----------------------------------------------
@@ -513,6 +639,7 @@ export function registerStore(Alpine) {
       if (!g) return;
       g.status = 'done';
       g.completedAt = todayStr();
+      this.awardBadge('first_goal');
       this.persist();
     },
 
@@ -542,13 +669,19 @@ export function registerStore(Alpine) {
     // ---- backup ---------------------------------------------------------
 
     exportData() {
-      const { version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes, fulizaEvents } = this;
+      const {
+        version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes,
+        fulizaEvents, badges, stats, challenge, challengeHistory,
+      } = this;
       return JSON.stringify(
         {
           app: 'savelock',
           version,
           exportedAt: new Date().toISOString(),
-          data: { version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes, fulizaEvents },
+          data: {
+            version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes,
+            fulizaEvents, badges, stats, challenge, challengeHistory,
+          },
         },
         null,
         2

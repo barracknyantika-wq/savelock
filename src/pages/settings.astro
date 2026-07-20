@@ -1,5 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
+const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
 ---
 
 <Layout title="SaveLock — Settings" tab="settings">
@@ -7,6 +8,20 @@ import Layout from '../layouts/Layout.astro';
     <h1 class="mb-7 px-1 font-display text-xl font-semibold tracking-tight text-cream">Settings</h1>
 
     <div class="space-y-5">
+      <!-- Badges & challenges -->
+      <a
+        href={`${base}/badges/`}
+        class="paper pressable relative flex rotate-[0.5deg] items-center justify-between p-5"
+      >
+        <div>
+          <h2 class="font-display text-lg font-semibold text-ink">Badges &amp; challenges</h2>
+          <p class="mt-1 text-sm font-light text-ink-2">Streaks, milestones, and an optional weekly save target.</p>
+        </div>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="shrink-0 text-ink-3">
+          <path d="M9 6l6 6-6 6" />
+        </svg>
+      </a>
+
       <!-- Daily limit -->
       <section class="paper rotate-[-0.8deg] p-5">
         <h2 class="font-display text-lg font-semibold text-ink">Daily limit</h2>
