@@ -4,6 +4,7 @@
 const KEY = 'savelock:v1';
 const HISTORY_CAP = 180;
 const SPEND_LOG_CAP = 500;
+const FULIZA_EVENTS_CAP = 200;
 const MILESTONES = [25, 50, 75, 100];
 
 export function todayStr(d = new Date()) {
@@ -73,6 +74,10 @@ function defaultState() {
     // an SMS re-delivered by the OS (or re-drained after a crash) can never
     // be logged twice. Bounded so it can't grow forever.
     processedMpesaCodes: [],
+    // Fuliza repayment/activation/interest events — tracked for visibility
+    // only, never counted toward spentToday (repaying or being charged for
+    // Fuliza isn't a new expense, it's clearing/servicing a past one).
+    fulizaEvents: [],
   };
 }
 
@@ -93,6 +98,7 @@ function load() {
       goals: Array.isArray(saved.goals) ? saved.goals : [],
       breaks: Array.isArray(saved.breaks) ? saved.breaks : [],
       processedMpesaCodes: Array.isArray(saved.processedMpesaCodes) ? saved.processedMpesaCodes : [],
+      fulizaEvents: Array.isArray(saved.fulizaEvents) ? saved.fulizaEvents : [],
     };
   } catch {
     return base;
@@ -112,10 +118,10 @@ export function registerStore(Alpine) {
     },
 
     persist() {
-      const { version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes } = this;
+      const { version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes, fulizaEvents } = this;
       localStorage.setItem(
         KEY,
-        JSON.stringify({ version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes })
+        JSON.stringify({ version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes, fulizaEvents })
       );
       window.dispatchEvent(new CustomEvent('savelock:persist'));
     },
@@ -337,6 +343,22 @@ export function registerStore(Alpine) {
       if (this.processedMpesaCodes.length > 300) {
         this.processedMpesaCodes = this.processedMpesaCodes.slice(-300);
       }
+      if (tx.type === 'fuliza_repayment' || tx.type === 'fuliza_activation' || tx.type === 'fuliza_interest') {
+        // Fuliza clearing/servicing a past debt, not a new expense — tracked
+        // for visibility only, never added to spentToday.
+        this.fulizaEvents.push({
+          id: uid(),
+          type: tx.type,
+          amount: Math.round(tx.amount * 100) / 100,
+          at: tx.receivedAt || Date.now(),
+          mpesaCode: tx.mpesaCode,
+        });
+        if (this.fulizaEvents.length > FULIZA_EVENTS_CAP) {
+          this.fulizaEvents = this.fulizaEvents.slice(-FULIZA_EVENTS_CAP);
+        }
+        this.persist();
+        return null;
+      }
       if (tx.type !== 'spend') {
         // "received" — never counted as spending, just marked seen so a
         // redelivered SMS can't notify twice.
@@ -354,6 +376,10 @@ export function registerStore(Alpine) {
         source: 'sms',
         mpesaCode: tx.mpesaCode,
         classification: 'spend',
+        // Real spending, just covered by overdraft rather than balance —
+        // kept for the "via Fuliza" badge, financial-awareness only.
+        viaFuliza: !!tx.viaFuliza,
+        fulizaAmount: tx.viaFuliza ? tx.fulizaAmount : null,
       };
       this.day.spends.push(record);
       this.persist();
@@ -516,13 +542,13 @@ export function registerStore(Alpine) {
     // ---- backup ---------------------------------------------------------
 
     exportData() {
-      const { version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes } = this;
+      const { version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes, fulizaEvents } = this;
       return JSON.stringify(
         {
           app: 'savelock',
           version,
           exportedAt: new Date().toISOString(),
-          data: { version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes },
+          data: { version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes, fulizaEvents },
         },
         null,
         2

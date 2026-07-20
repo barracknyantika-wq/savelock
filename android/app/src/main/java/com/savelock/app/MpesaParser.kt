@@ -8,13 +8,19 @@ package com.savelock.app
  */
 data class MpesaTransaction(
     val mpesaCode: String,
-    val type: String, // "spend" | "received"
+    // "spend" | "received" | "fuliza_repayment" | "fuliza_activation" | "fuliza_interest"
+    val type: String,
     val subtype: String,
     val amount: Double,
     val counterparty: String,
-    val category: String?, // null for "received" — categories are a spend concept
+    val category: String?, // null for anything but "spend"
     val balance: Double?,
-    val receivedAt: Long
+    val receivedAt: Long,
+    // Real spending, just covered by overdraft rather than balance — set
+    // only on "spend" transactions. fuliza_repayment/activation/interest
+    // are their own types and are never double-counted as a spend.
+    val viaFuliza: Boolean = false,
+    val fulizaAmount: Double? = null
 )
 
 object MpesaParser {
@@ -25,9 +31,90 @@ object MpesaParser {
     private val BALANCE_RE =
         Regex("(?:new\\s+)?m-pesa balance is ksh\\s?([\\d,]+(?:\\.\\d{2})?)", RegexOption.IGNORE_CASE)
 
+    // Fuliza (M-Pesa's overdraft) messages don't fit the plain "X paid to Y"
+    // shape. A Fuliza-covered purchase rides on a normal Confirmed
+    // transaction message (still parsed by RULES below) but adds a
+    // sentence saying part of it was covered by Fuliza — that's an overlay,
+    // not a different message. Repayment/activation/interest are genuinely
+    // separate message types with no spend of their own.
+    private val FULIZA_USED_RE = Regex(
+        "fuliza\\s*m-pesa\\s*amount\\s*used\\s*to\\s*complete\\s*(?:this|your)\\s*transaction\\s*is\\s*ksh\\s?([\\d,]+(?:\\.\\d{2})?)",
+        RegexOption.IGNORE_CASE
+    )
+    private val FULIZA_USED_ALT_RE = Regex(
+        "fuliza\\s*m-pesa\\s*amount\\s*of\\s*ksh\\s?([\\d,]+(?:\\.\\d{2})?)\\s*has\\s*been\\s*used",
+        RegexOption.IGNORE_CASE
+    )
+    private val FULIZA_REPAYMENT_RE = Regex(
+        "ksh\\s?([\\d,]+(?:\\.\\d{2})?)[^.]*?used\\s*to\\s*(?:fully|partially)?\\s*pay\\s*your\\s*outstanding\\s*fuliza\\s*m-pesa",
+        RegexOption.IGNORE_CASE
+    )
+    private val FULIZA_REPAYMENT_ANCHOR_RE = Regex(
+        "used\\s*to\\s*(?:fully|partially)?\\s*pay\\s*your\\s*outstanding\\s*fuliza\\s*m-pesa",
+        RegexOption.IGNORE_CASE
+    )
+    private val FULIZA_ACTIVATED_RE = Regex(
+        "(?:activated\\s*for\\s*fuliza\\s*m-pesa|fuliza\\s*m-pesa\\s*has\\s*been\\s*activated)",
+        RegexOption.IGNORE_CASE
+    )
+    private val FULIZA_LIMIT_RE =
+        Regex("fuliza\\s*m-pesa\\s*limit\\s*is\\s*ksh\\s?([\\d,]+(?:\\.\\d{2})?)", RegexOption.IGNORE_CASE)
+    private val FULIZA_INTEREST_RE = Regex(
+        "(?:maintenance|access)\\s*fee\\s*of\\s*ksh\\s?([\\d,]+(?:\\.\\d{2})?)[^.]*?(?:charged|fuliza)",
+        RegexOption.IGNORE_CASE
+    )
+    private val FULIZA_MENTION_RE = Regex("fuliza", RegexOption.IGNORE_CASE)
+
     private fun num(group: String?): Double? {
         if (group == null) return null
         return group.replace(",", "").toDoubleOrNull()
+    }
+
+    // No transaction code to dedup on for the code-less Fuliza messages
+    // (activation, interest/maintenance fee) — derive a stable synthetic
+    // one from the message text so the same SMS still can't be
+    // double-processed.
+    private fun syntheticCode(prefix: String, text: String): String {
+        var h = 0
+        for (c in text) {
+            h = h * 31 + c.code
+        }
+        return prefix + Integer.toUnsignedString(h, 36).uppercase()
+    }
+
+    private fun matchFulizaUsed(text: String): Double? =
+        num(FULIZA_USED_RE.find(text)?.groupValues?.get(1)) ?: num(FULIZA_USED_ALT_RE.find(text)?.groupValues?.get(1))
+
+    // Fuliza-only messages that never carry the standard "<CODE> Confirmed"
+    // transaction wrapper. Checked before the regular gate, since requiring
+    // "Confirmed" would otherwise reject them outright.
+    private fun parseStandaloneFuliza(text: String, receivedAtMs: Long): MpesaTransaction? {
+        if (FULIZA_ACTIVATED_RE.containsMatchIn(text)) {
+            return MpesaTransaction(
+                mpesaCode = syntheticCode("FZACT", text),
+                type = "fuliza_activation",
+                subtype = "fuliza_activation",
+                amount = num(FULIZA_LIMIT_RE.find(text)?.groupValues?.get(1)) ?: 0.0,
+                counterparty = "Fuliza M-PESA",
+                category = null,
+                balance = null,
+                receivedAt = receivedAtMs
+            )
+        }
+        val interest = num(FULIZA_INTEREST_RE.find(text)?.groupValues?.get(1))
+        if (interest != null && FULIZA_MENTION_RE.containsMatchIn(text)) {
+            return MpesaTransaction(
+                mpesaCode = syntheticCode("FZINT", text),
+                type = "fuliza_interest",
+                subtype = "fuliza_interest",
+                amount = interest,
+                counterparty = "Fuliza M-PESA",
+                category = null,
+                balance = null,
+                receivedAt = receivedAtMs
+            )
+        }
+        return null
     }
 
     private fun clean(name: String): String =
@@ -78,7 +165,9 @@ object MpesaParser {
                 .find(body)?.groupValues?.get(1)?.let(::clean)
         },
         Rule("spend", "withdraw") { body ->
-            Regex("withdrawn\\s+ksh[\\d,.]+\\s+from\\s+(.+?)\\s+on\\s", RegexOption.IGNORE_CASE)
+            // Tolerates both real-world orderings seen in agent-withdrawal
+            // SMS: "Ksh2,000.00 withdrawn from X" and "withdrawn Ksh2,000.00 from X".
+            Regex("(?:ksh[\\d,.]+\\s+)?withdrawn\\s+(?:ksh[\\d,.]+\\s+)?from\\s+(.+?)\\s+on\\s", RegexOption.IGNORE_CASE)
                 .find(body)?.groupValues?.get(1)?.let(::clean)
         },
         Rule("spend", "airtime") { body ->
@@ -92,14 +181,35 @@ object MpesaParser {
         if (rawBody.isNullOrBlank()) return null
         val text = rawBody.replace(Regex("\\s+"), " ").trim()
 
+        parseStandaloneFuliza(text, receivedAtMs)?.let { return it }
+
         if (!Regex("confirmed", RegexOption.IGNORE_CASE).containsMatchIn(text)) return null
         val codeMatch = CODE_RE.find(text) ?: return null
         val amountMatch = AMOUNT_RE.find(text) ?: return null
         val amount = num(amountMatch.groupValues[1]) ?: return null
         if (amount <= 0) return null
 
+        // Fuliza repayment rides on the normal Confirmed/code wrapper (money
+        // moving is what triggers it) but it's clearing a past debt, not a
+        // new expense — checked before RULES so it can't be misread as a
+        // spend or a plain receive.
+        if (FULIZA_REPAYMENT_ANCHOR_RE.containsMatchIn(text)) {
+            val repaid = num(FULIZA_REPAYMENT_RE.find(text)?.groupValues?.get(1)) ?: amount
+            return MpesaTransaction(
+                mpesaCode = codeMatch.groupValues[1],
+                type = "fuliza_repayment",
+                subtype = "fuliza_repayment",
+                amount = repaid,
+                counterparty = "Fuliza M-PESA",
+                category = null,
+                balance = num(BALANCE_RE.find(text)?.groupValues?.get(1)),
+                receivedAt = receivedAtMs
+            )
+        }
+
         for (rule in RULES) {
             val counterparty = rule.match(text) ?: continue
+            val fulizaAmount = if (rule.type == "spend") matchFulizaUsed(text) else null
             return MpesaTransaction(
                 mpesaCode = codeMatch.groupValues[1],
                 type = rule.type,
@@ -108,7 +218,9 @@ object MpesaParser {
                 counterparty = counterparty,
                 category = if (rule.type == "spend") guessCategory(counterparty, rule.subtype) else null,
                 balance = num(BALANCE_RE.find(text)?.groupValues?.get(1)),
-                receivedAt = receivedAtMs
+                receivedAt = receivedAtMs,
+                viaFuliza = fulizaAmount != null,
+                fulizaAmount = fulizaAmount
             )
         }
         return null

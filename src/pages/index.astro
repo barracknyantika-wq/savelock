@@ -215,6 +215,13 @@ import Layout from '../layouts/Layout.astro';
                       class="ml-1 rounded-full bg-paper-deep px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-ink-3"
                       >M-Pesa</span
                     >
+                    <span
+                      x-show="s.viaFuliza"
+                      x-cloak
+                      class="ml-1 rounded-full bg-brick/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-brick"
+                      :title="'Ksh ' + (s.fulizaAmount ?? '') + ' covered by Fuliza overdraft'"
+                      >Fuliza</span
+                    >
                   </p>
                 </div>
                 <button

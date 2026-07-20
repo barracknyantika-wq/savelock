@@ -120,10 +120,10 @@ class SmsReceiver : BroadcastReceiver() {
         sp.edit().putString(KEY_PENDING_QUEUE, trimmedQueue.toString()).apply()
 
         ensureChannel(context)
-        if (tx.type == "spend") {
-            handleSpendNotification(context, sp, tx)
-        } else {
-            handleReceivedNotification(context, sp, tx)
+        when (tx.type) {
+            "spend" -> handleSpendNotification(context, sp, tx)
+            "fuliza_repayment", "fuliza_activation", "fuliza_interest" -> handleFulizaEventNotification(context, sp, tx)
+            else -> handleReceivedNotification(context, sp, tx)
         }
     }
 
@@ -169,6 +169,19 @@ class SmsReceiver : BroadcastReceiver() {
         notify(context, tx.mpesaCode, "SaveLock", text)
     }
 
+    // Fuliza clearing/servicing a past debt, not a new expense — informational
+    // only, gated on the same "notify on non-spend events" preference.
+    private fun handleFulizaEventNotification(context: Context, sp: SharedPreferences, tx: MpesaTransaction) {
+        if (!sp.getBoolean(KEY_NOTIFY_RECEIVED, true)) return
+        val currency = sp.getString(KEY_BUDGET_CURRENCY, "KSh") ?: "KSh"
+        val text = when (tx.type) {
+            "fuliza_repayment" -> "$currency ${fmt(tx.amount)} used to repay Fuliza M-PESA — not counted as new spending."
+            "fuliza_activation" -> "Fuliza M-PESA activated. Limit: $currency ${fmt(tx.amount)}."
+            else -> "Fuliza M-PESA fee of $currency ${fmt(tx.amount)} charged — not counted as new spending."
+        }
+        notify(context, tx.mpesaCode, "SaveLock", text)
+    }
+
     private fun notify(context: Context, mpesaCode: String, title: String, text: String) {
         if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) !=
             android.content.pm.PackageManager.PERMISSION_GRANTED && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
@@ -206,6 +219,8 @@ class SmsReceiver : BroadcastReceiver() {
         put("category", tx.category ?: JSONObject.NULL)
         put("balance", tx.balance ?: JSONObject.NULL)
         put("receivedAt", tx.receivedAt)
+        put("viaFuliza", tx.viaFuliza)
+        put("fulizaAmount", tx.fulizaAmount ?: JSONObject.NULL)
     }
 
     private fun trimJsonArray(arr: JSONArray, cap: Int): JSONArray {
