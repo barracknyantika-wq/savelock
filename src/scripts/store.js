@@ -244,7 +244,7 @@ export function registerStore(Alpine) {
 
     startChallenge(targetExtra) {
       if (this.challenge || !(targetExtra > 0)) return false;
-      this.challenge = { targetExtra: Math.round(targetExtra * 100) / 100, startDate: todayStr() };
+      this.challenge = { id: uid(), targetExtra: Math.round(targetExtra * 100) / 100, startDate: todayStr() };
       this.persist();
       return true;
     },

@@ -8,6 +8,20 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
     <h1 class="mb-7 px-1 font-display text-xl font-semibold tracking-tight text-cream">Settings</h1>
 
     <div class="space-y-5">
+      <!-- Account / cloud sync -->
+      <a
+        href={`${base}/account/`}
+        class="paper pressable relative flex rotate-[-0.4deg] items-center justify-between p-5"
+      >
+        <div>
+          <h2 class="font-display text-lg font-semibold text-ink">Account &amp; sync</h2>
+          <p class="mt-1 text-sm font-light text-ink-2">Sign in to sync across devices and back up off this phone.</p>
+        </div>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="shrink-0 text-ink-3">
+          <path d="M9 6l6 6-6 6" />
+        </svg>
+      </a>
+
       <!-- Badges & challenges -->
       <a
         href={`${base}/badges/`}

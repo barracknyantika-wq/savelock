@@ -16,6 +16,7 @@
     "@capacitor/local-notifications": "^8.2.1",
     "@fontsource-variable/fraunces": "^5.2.9",
     "@fontsource-variable/outfit": "^5.2.8",
+    "@supabase/supabase-js": "^2.110.7",
     "@tailwindcss/vite": "^4.1.0",
     "alpinejs": "^3.14.0",
     "astro": "^5.0.0",

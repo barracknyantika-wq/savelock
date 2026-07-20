@@ -11,6 +11,18 @@ import {
   syncReminders,
   syncWeeklySummary,
 } from './native-bridge.js';
+import {
+  isCloudConfigured,
+  initCloudSync,
+  getSession,
+  onAuthStateChange,
+  sendOtp,
+  verifyOtp,
+  signOut as cloudSignOut,
+  hasRemoteData,
+  pullState,
+  pushState,
+} from './cloud-sync.js';
 
 window.Alpine = Alpine;
 registerStore(Alpine);
@@ -445,5 +457,122 @@ Alpine.data('badgesPage', () => ({
   },
 }));
 
+Alpine.data('accountPage', () => ({
+  cloudConfigured: isCloudConfigured(),
+  session: null,
+  phone: '',
+  otp: '',
+  // 'phone' | 'otp' | 'reconcile' | 'import' | 'signed-in'
+  stage: 'phone',
+  error: '',
+  busy: false,
+
+  async init() {
+    if (!this.cloudConfigured) return;
+    this.session = await getSession();
+    if (this.session) this.stage = 'signed-in';
+    onAuthStateChange((session) => {
+      this.session = session;
+    });
+  },
+
+  get phoneOnFile() {
+    return this.session?.user?.phone ? `+${this.session.user.phone}` : '';
+  },
+
+  localHasData() {
+    const s = store();
+    return s.settings.dailyLimit > 0 || s.goals.length > 0 || s.spendLog.length > 0 || s.day.spends.length > 0;
+  },
+
+  async sendCode() {
+    this.error = '';
+    const phone = this.phone.trim();
+    if (!phone) return;
+    this.busy = true;
+    const { error } = await sendOtp(phone);
+    this.busy = false;
+    if (error) {
+      this.error = error;
+      return;
+    }
+    this.stage = 'otp';
+    toast('Code sent');
+  },
+
+  async verifyCode() {
+    this.error = '';
+    if (!this.otp.trim()) return;
+    this.busy = true;
+    const { error, session } = await verifyOtp(this.phone.trim(), this.otp.trim());
+    this.busy = false;
+    if (error) {
+      this.error = error;
+      return;
+    }
+    this.session = session;
+    await this.reconcile();
+  },
+
+  async reconcile() {
+    const userId = this.session.user.id;
+    const remoteHasData = await hasRemoteData(userId);
+    const localData = this.localHasData();
+    if (remoteHasData && localData) {
+      this.stage = 'reconcile';
+    } else if (remoteHasData && !localData) {
+      await this.pullNow();
+      this.stage = 'signed-in';
+      toast('Synced');
+    } else if (!remoteHasData && localData) {
+      this.stage = 'import';
+    } else {
+      this.stage = 'signed-in';
+    }
+  },
+
+  async pullNow() {
+    const remote = await pullState();
+    if (remote) {
+      Object.assign(store(), remote);
+      store().persist();
+    }
+  },
+
+  async importLocalData() {
+    this.busy = true;
+    await pushState(store());
+    this.busy = false;
+    this.stage = 'signed-in';
+    toast('Imported');
+  },
+
+  async useAccountData() {
+    this.busy = true;
+    await this.pullNow();
+    this.busy = false;
+    this.stage = 'signed-in';
+    toast('Synced');
+  },
+
+  async keepThisDevice() {
+    this.busy = true;
+    await pushState(store());
+    this.busy = false;
+    this.stage = 'signed-in';
+    toast('Synced');
+  },
+
+  async signOutOfAccount() {
+    await cloudSignOut();
+    this.session = null;
+    this.stage = 'phone';
+    this.phone = '';
+    this.otp = '';
+    toast('Signed out');
+  },
+}));
+
 Alpine.start();
 initNativeBridge(store());
+initCloudSync(store());

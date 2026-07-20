@@ -42,6 +42,12 @@ jobs:
       - name: Install npm dependencies
         run: npm install
       - name: Build web app
+        # Empty/unset secrets are fine — cloud sync just stays off (same as
+        # every local build until these are configured in repo Settings ->
+        # Secrets and variables -> Actions). See SUPABASE_SETUP.md.
+        env:
+          PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL }}
+          PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
         run: npm run build
       - name: Sync Capacitor Android project
         run: npx cap sync android
