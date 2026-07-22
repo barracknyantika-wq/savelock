@@ -143,7 +143,108 @@ sign-in form.
 `build-android.yml` already reads both into the build step — leaving them
 unset just keeps the built APK local-only, same as today.
 
-## 7. Try it
+## 7. Turn on M-Pesa deposits and withdrawals (optional)
+
+This is a separate opt-in feature on top of everything above: a user can tap
+Deposit on a goal to get an M-Pesa PIN prompt (STK Push), and the goal's
+balance updates once Safaricom confirms payment. Withdrawals (money sent
+back out to a phone, B2C) exist too, but only for one account, gated by
+`profiles.is_owner`, since this is meant for the developer's own testing
+with real money for now, not for every user yet.
+
+None of this needs anything from sections 1 through 6 above beyond the
+project already existing, it's entirely separate credentials and its own
+set of database objects.
+
+### 7a. Run the additional migrations
+
+In the SQL Editor, run these four in order, same as section 2:
+[`0003_mpesa_transactions.sql`](./supabase/migrations/0003_mpesa_transactions.sql),
+[`0004_owner_flag.sql`](./supabase/migrations/0004_owner_flag.sql),
+[`0005_mpesa_functions.sql`](./supabase/migrations/0005_mpesa_functions.sql),
+[`0006_goal_balance_readable.sql`](./supabase/migrations/0006_goal_balance_readable.sql).
+
+### 7b. Deploy the Edge Functions
+
+Using the Supabase CLI, from the repo root:
+
+```
+supabase link --project-ref your-project-ref
+supabase functions deploy initiate-stk-push
+supabase functions deploy stk-callback
+supabase functions deploy initiate-b2c-withdrawal
+supabase functions deploy b2c-callback
+```
+
+`stk-callback` and `b2c-callback` are the two Safaricom actually posts to
+directly, with no Supabase login of its own, so `supabase/config.toml`
+already turns off this project's usual JWT check for just those two. If you
+deploy some other way and that setting doesn't carry over, both of those
+two calls will fail with an authorization error before your own code ever
+runs, that's the first thing to check if callbacks aren't arriving.
+
+### 7c. Set the Edge Function secrets
+
+**Project Settings → Edge Functions → Secrets** (these never reach the app
+itself, they only exist inside the functions above):
+
+- `MPESA_ENV`: `sandbox` or `production`. Everything below points at
+  Safaricom's sandbox host until this says otherwise.
+- `MPESA_CONSUMER_KEY` / `MPESA_CONSUMER_SECRET`: from your Daraja app, used
+  to get an OAuth token for both deposits and withdrawals.
+- `MPESA_SHORTCODE`: the PayBill shortcode STK Push deposits go to. The
+  sandbox value already confirmed working end to end is `174379`.
+- `MPESA_PASSKEY`: the STK Push passkey paired with that shortcode.
+- `MPESA_CALLBACK_BASE_URL`: `https://your-project-ref.supabase.co/functions/v1`
+  (no trailing slash), this is how the two initiate-\* functions build the
+  callback URLs they hand to Daraja.
+- `MPESA_B2C_INITIATOR_NAME`, `MPESA_B2C_SECURITY_CREDENTIAL`,
+  `MPESA_B2C_SHORTCODE`: from the Daraja Test Credentials page for B2C
+  specifically, separate from the STK Push values above. Production values
+  for both flows are meant to replace these same variable names later,
+  nothing in code should ever need to change for that swap.
+
+`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` don't need setting by hand,
+Supabase injects both into every Edge Function automatically. The service
+role key is what lets stk-callback/b2c-callback credit or debit a goal on
+Safaricom's behalf, it never appears anywhere in the app itself.
+
+### 7d. Grant withdraw access to one account
+
+Withdrawals stay off for everyone until you turn them on for a specific
+user, by hand, in the SQL Editor:
+
+```sql
+update public.profiles set is_owner = true where id = 'the-developer-account-user-id';
+```
+
+Find that id under **Authentication → Users**. There's deliberately no UI
+for this anywhere in the app, flipping it back to `false` disables the
+Withdraw button on that account again immediately.
+
+### 7e. What's confirmed and what isn't
+
+The STK Push request and callback shapes here were verified end to end
+against the Daraja sandbox already, by hand, with curl, before any of this
+code was written. That gives real confidence in the deposit side's request
+format. The B2C side is built from the same publicly documented request and
+callback shapes, but hasn't been exercised against a live sandbox call the
+same way, since the B2C sandbox credentials weren't available yet while this
+was built, confirm the exact field names still match once
+`MPESA_B2C_INITIATOR_NAME`/`MPESA_B2C_SECURITY_CREDENTIAL` are in place and
+a real B2C request has actually gone through.
+
+The database side (RLS so a user can never mark their own deposit or
+withdrawal completed, the atomic credit/debit functions never double
+counting a duplicate callback retry, the ledger-based balance calculation)
+was all verified against a real local Postgres instance, including
+deliberately breaking each guard once to confirm the corresponding test
+actually catches it. The Realtime piece that updates the Deposit/Withdraw
+sheet automatically once a callback lands was verified only up to the point
+Supabase's client library takes over, actually watching a live callback
+arrive over that connection needs a real project to test.
+
+## 8. Try it
 
 Open the app, go to **Settings → Account & sync**, and sign in either way:
 - **Phone**: enter a real phone number, confirm the OTP arrives and signs
@@ -156,6 +257,10 @@ choice to import it into the account (or, if the account already had data
 from elsewhere, a choice of which copy to keep) — nothing is silently merged
 or discarded, and this happens the same way regardless of which sign-in
 method you used.
+
+If you set up section 7 too, open a goal and try Deposit with the sandbox
+test number `254708374149`, the PIN prompt on that number always succeeds in
+sandbox. Withdraw only shows up on the one account you flipped `is_owner` on.
 
 ## What this does and doesn't do
 

@@ -1,0 +1,18 @@
+# Only the two Safaricom-facing callback endpoints are declared here.
+# Everything else about this project's Supabase setup (auth providers,
+# schema) is configured through the dashboard and the migrations in
+# supabase/migrations/, per SUPABASE_SETUP.md.
+#
+# stk-callback and b2c-callback are hit directly by Safaricom's servers,
+# which never send a Supabase JWT, so the platform's default
+# JWT-verification gate must be off for these two specifically or every
+# real callback gets rejected before this project's own code ever runs.
+# initiate-stk-push and initiate-b2c-withdrawal are deliberately NOT listed
+# here: they're called by signed-in users from the app and must keep the
+# default JWT verification on.
+
+[functions.stk-callback]
+verify_jwt = false
+
+[functions.b2c-callback]
+verify_jwt = false

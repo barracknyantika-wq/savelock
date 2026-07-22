@@ -26,6 +26,12 @@ import {
   pushState,
   signInWithGoogle,
   onGoogleAuthRedirect,
+  isAccountOwner,
+  initiateDeposit,
+  initiateWithdrawal,
+  getGoalMpesaBalance,
+  refetchGoal,
+  subscribeToRow,
 } from './cloud-sync.js';
 
 window.Alpine = Alpine;
@@ -225,6 +231,39 @@ Alpine.data('goalsPage', () => ({
   milestoneBanner: '',
   minDate: todayStr(),
 
+  cloudConfigured: isCloudConfigured(),
+  session: null,
+  isOwner: false,
+
+  depGoalId: null,
+  depAmount: '',
+  depPhone: '',
+  depStage: 'form', // 'form' | 'checking' | 'done' | 'failed'
+  depMessage: '',
+  depError: '',
+  depBusy: false,
+  depUnsub: null,
+
+  wdGoalId: null,
+  wdAmount: '',
+  wdPhone: '',
+  wdAvailable: 0,
+  wdStage: 'form', // 'form' | 'checking' | 'done' | 'failed'
+  wdMessage: '',
+  wdError: '',
+  wdBusy: false,
+  wdUnsub: null,
+
+  async init() {
+    if (!this.cloudConfigured) return;
+    this.session = await getSession();
+    if (this.session) this.isOwner = await isAccountOwner();
+    onAuthStateChange(async (session) => {
+      this.session = session;
+      this.isOwner = session ? await isAccountOwner() : false;
+    });
+  },
+
   goalGauge(g) {
     return tickGauge(store().progress(g));
   },
@@ -287,6 +326,124 @@ Alpine.data('goalsPage', () => ({
     this.breakId = null;
     this.breakText = '';
     toast('Recorded');
+  },
+
+  // After either flow confirms, the server is the one source of truth for
+  // how much M-Pesa actually moved, this re-reads that goal and applies it
+  // through the same updateSaved() a manual entry goes through, so a
+  // deposit that crosses a milestone gets the exact same banner treatment.
+  async applyConfirmedGoalAmount(goalId) {
+    const goal = await refetchGoal(goalId);
+    if (!goal) return;
+    const milestones = store().updateSaved(goalId, goal.saved);
+    const text = milestoneText(milestones, goal.name);
+    if (text) {
+      this.milestoneBanner = text;
+      setTimeout(() => (this.milestoneBanner = ''), 5000);
+    }
+  },
+
+  openDeposit(g) {
+    this.depGoalId = g.id;
+    this.depAmount = '';
+    this.depPhone = this.session?.user?.phone ? `+${this.session.user.phone}` : '';
+    this.depError = '';
+    this.depMessage = '';
+    this.depStage = 'form';
+    this.depBusy = false;
+  },
+
+  get depositGoal() {
+    return store().goals.find((g) => g.id === this.depGoalId) || null;
+  },
+
+  closeDeposit() {
+    if (this.depUnsub) {
+      this.depUnsub();
+      this.depUnsub = null;
+    }
+    this.depGoalId = null;
+  },
+
+  async submitDeposit() {
+    this.depError = '';
+    const amount = parseAmount(this.depAmount);
+    if (!amount) return;
+    const phone = this.depPhone.trim();
+    if (!phone) return;
+    this.depBusy = true;
+    const { error, deposit_id, customer_message } = await initiateDeposit(this.depGoalId, amount, phone);
+    this.depBusy = false;
+    if (error) {
+      this.depError = error;
+      return;
+    }
+    this.depMessage = customer_message || 'Check your phone to complete the payment.';
+    this.depStage = 'checking';
+    const goalId = this.depGoalId;
+    this.depUnsub = subscribeToRow('deposits', deposit_id, async (row) => {
+      if (row.status === 'completed') {
+        await this.applyConfirmedGoalAmount(goalId);
+        this.depStage = 'done';
+      } else if (row.status === 'failed') {
+        this.depStage = 'failed';
+        this.depError = row.result_desc || 'The deposit did not go through.';
+      }
+    });
+  },
+
+  async openWithdraw(g) {
+    this.wdGoalId = g.id;
+    this.wdAmount = '';
+    this.wdPhone = this.session?.user?.phone ? `+${this.session.user.phone}` : '';
+    this.wdError = '';
+    this.wdMessage = '';
+    this.wdStage = 'form';
+    this.wdBusy = false;
+    this.wdAvailable = await getGoalMpesaBalance(g.id);
+  },
+
+  get withdrawGoal() {
+    return store().goals.find((g) => g.id === this.wdGoalId) || null;
+  },
+
+  closeWithdraw() {
+    if (this.wdUnsub) {
+      this.wdUnsub();
+      this.wdUnsub = null;
+    }
+    this.wdGoalId = null;
+  },
+
+  async submitWithdraw() {
+    this.wdError = '';
+    const amount = parseAmount(this.wdAmount);
+    if (!amount) return;
+    if (amount > this.wdAvailable) {
+      this.wdError = `Only ${store().money(this.wdAvailable)} is confirmed available for this goal through M-Pesa.`;
+      return;
+    }
+    const phone = this.wdPhone.trim();
+    if (!phone) return;
+    this.wdBusy = true;
+    const { error, withdrawal_id, customer_message } = await initiateWithdrawal(this.wdGoalId, amount, phone);
+    this.wdBusy = false;
+    if (error) {
+      this.wdError = error;
+      return;
+    }
+    this.wdMessage = customer_message || 'Your withdrawal is being processed.';
+    this.wdStage = 'checking';
+    const goalId = this.wdGoalId;
+    this.wdUnsub = subscribeToRow('withdrawals', withdrawal_id, async (row) => {
+      if (row.status === 'completed') {
+        await this.applyConfirmedGoalAmount(goalId);
+        this.wdStage = 'done';
+      } else if (row.status === 'failed') {
+        this.wdStage = 'failed';
+        this.wdError = row.result_desc || 'The withdrawal did not go through.';
+      }
+    });
   },
 }));
 

@@ -436,6 +436,92 @@ export async function pullState() {
   };
 }
 
+// ---- M-Pesa deposits and withdrawals ---------------------------------------
+//
+// The actual money movement (talking to Daraja, deciding what counts as
+// available balance, crediting/debiting a goal) all happens server-side in
+// the initiate-stk-push/stk-callback/initiate-b2c-withdrawal/b2c-callback
+// Edge Functions, never here. This is just the thin client side of that:
+// start a request, then watch the row it created until the callback
+// resolves it.
+
+async function invokeFunction(name, body) {
+  const c = client();
+  if (!c) return { error: 'Cloud sync is not configured for this build.' };
+  const { data, error } = await c.functions.invoke(name, { body });
+  if (error) {
+    // A non-2xx response from the function arrives as a FunctionsHttpError;
+    // the actual message SaveLock's function sent back is in the response
+    // body, not error.message (which is just "Edge Function returned a
+    // non-2xx status code").
+    const detail = await error.context?.json?.().catch(() => null);
+    return { error: detail?.error || error.message };
+  }
+  if (data?.error) return { error: data.error };
+  return { error: null, ...data };
+}
+
+export async function initiateDeposit(goalId, amount, phoneNumber) {
+  return invokeFunction('initiate-stk-push', { goal_id: goalId, amount, phone_number: phoneNumber });
+}
+
+export async function initiateWithdrawal(goalId, amount, phoneNumber) {
+  return invokeFunction('initiate-b2c-withdrawal', { goal_id: goalId, amount, phone_number: phoneNumber });
+}
+
+// Gates the Withdraw button. Deposits stay open to everyone; this feature
+// is developer-only for now, see migration 0004_owner_flag.sql.
+export async function isAccountOwner() {
+  const c = client();
+  if (!c) return false;
+  const session = await getSession();
+  if (!session) return false;
+  const { data } = await c.from('profiles').select('is_owner').eq('id', session.user.id).maybeSingle();
+  return !!data?.is_owner;
+}
+
+// The ledger-derived balance used to enable/disable the Withdraw button and
+// show "available" in its sheet. This is read-only display, the real
+// enforcement of this same number happens again, authoritatively, inside
+// initiate-b2c-withdrawal itself.
+export async function getGoalMpesaBalance(goalId) {
+  const c = client();
+  if (!c) return 0;
+  const { data, error } = await c.rpc('goal_mpesa_balance', { p_goal_id: goalId });
+  if (error) return 0;
+  return Number(data) || 0;
+}
+
+// Re-reads one goal row from the server, used right after a deposit or
+// withdrawal completes so the on-device saved amount matches what M-Pesa
+// actually confirmed. Needed because pushState() mirrors the *local* copy
+// of goals up to Supabase, so without this, the next debounced push would
+// overwrite the server's just-credited amount back down to the stale local
+// number the instant something else on this device triggers a save.
+export async function refetchGoal(goalId) {
+  const c = client();
+  if (!c) return null;
+  const { data, error } = await c.from('goals').select('*').eq('id', goalId).maybeSingle();
+  if (error || !data) return null;
+  return rowToGoal(data);
+}
+
+// Watches one deposits/withdrawals row for the status flip a callback
+// makes, so the UI updates the instant Safaricom's callback lands instead
+// of the user needing to refresh. Returns an unsubscribe function; a no-op
+// one if cloud sync isn't configured, same convention as onAuthStateChange.
+export function subscribeToRow(table, id, onChange) {
+  const c = client();
+  if (!c || !id) return () => {};
+  const channel = c
+    .channel(`${table}-${id}`)
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table, filter: `id=eq.${id}` }, (payload) => onChange(payload.new))
+    .subscribe();
+  return () => {
+    c.removeChannel(channel);
+  };
+}
+
 // ---- wiring -----------------------------------------------------------------
 
 const PUSH_DEBOUNCE_MS = 2500;
