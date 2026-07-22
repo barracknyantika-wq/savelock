@@ -1,0 +1,72 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="SaveLock — Report" tab="report">
+  <main x-data="reportPage" class="mx-auto w-full max-w-md px-5 pb-44 pt-7">
+    <header class="mb-7 px-1">
+      <h1 class="font-display text-xl font-semibold tracking-tight text-cream">Report</h1>
+      <p class="mt-1 text-sm font-light text-cream-2">Yesterday, and every day before it.</p>
+    </header>
+
+    <!-- Empty state -->
+    <p
+      x-show="!pastDays.length"
+      x-cloak
+      class="rotate-[-1deg] rounded-2xl border border-dashed border-charcoal-2 px-6 py-7 text-center text-sm leading-relaxed text-cream-2"
+    >
+      No closed days yet. Once today rolls over into tomorrow, it shows up here.
+    </p>
+
+    <div class="space-y-4">
+      <template x-for="(day, i) in pastDays" :key="day.date">
+        <section
+          class="paper relative p-5"
+          :class="i % 2 === 0 ? 'rotate-[-0.7deg] mr-2' : 'rotate-[0.6deg] ml-2'"
+        >
+          <button type="button" class="flex w-full items-center justify-between text-left" @click="toggleExpand(day.date)">
+            <div class="min-w-0">
+              <h2 class="font-display text-lg font-semibold tracking-tight text-ink" x-text="$store.sl.dateShort(day.date)"></h2>
+              <p class="mt-0.5 text-sm font-light text-ink-2">
+                <span class="font-semibold text-ink" x-text="$store.sl.money(day.spent)"></span>
+                <span x-text="' of ' + $store.sl.money(day.limit)"></span>
+              </p>
+            </div>
+            <span
+              class="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide"
+              :class="isOverBudget(day) ? 'bg-brick/15 text-brick' : 'bg-ochre/15 text-ochre-deep'"
+              x-text="isOverBudget(day) ? 'Over' : 'Under'"
+            ></span>
+          </button>
+
+          <template x-if="isExpanded(day.date)">
+            <div class="mt-3 border-t border-dashed border-paper-line pt-3">
+              <p
+                x-show="!spendsForDate(day.date).length"
+                class="text-sm text-ink-3"
+              >
+                No individual transactions kept for this day.
+              </p>
+              <ul x-show="spendsForDate(day.date).length" class="space-y-2">
+                <template x-for="s in spendsForDate(day.date)" :key="s.id">
+                  <li class="flex items-center justify-between gap-2 text-sm">
+                    <div class="min-w-0">
+                      <p class="truncate font-medium text-ink" x-text="s.note || s.category || 'Spend'"></p>
+                      <p class="text-xs font-light text-ink-3">
+                        <span x-text="$store.sl.time(s.at)"></span>
+                        <span x-text="' · ' + (s.category || 'Other')"></span>
+                        <span x-show="s.source === 'sms'"> · M-Pesa</span>
+                        <span x-show="s.viaFuliza"> · Fuliza</span>
+                      </p>
+                    </div>
+                    <span class="shrink-0 font-semibold tabular-nums text-ink" x-text="$store.sl.money(s.amount)"></span>
+                  </li>
+                </template>
+              </ul>
+            </div>
+          </template>
+        </section>
+      </template>
+    </div>
+  </main>
+</Layout>

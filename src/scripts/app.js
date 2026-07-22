@@ -178,6 +178,37 @@ Alpine.data('todayPage', () => ({
   },
 }));
 
+Alpine.data('reportPage', () => ({
+  expandedDate: null,
+
+  // Most recent closed day first — today itself isn't in history yet
+  // (it's still open/editable), so this is genuinely "yesterday and
+  // further back," as asked for.
+  get pastDays() {
+    return [...store().history].reverse();
+  },
+
+  isOverBudget(day) {
+    return day.limit > 0 && day.spent > day.limit;
+  },
+
+  isExpanded(date) {
+    return this.expandedDate === date;
+  },
+
+  toggleExpand(date) {
+    this.expandedDate = this.expandedDate === date ? null : date;
+  },
+
+  spendsForDate(date) {
+    return store().spendLog.filter((s) => {
+      const d = new Date(s.at);
+      const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      return ds === date;
+    });
+  },
+}));
+
 Alpine.data('goalsPage', () => ({
   newSheet: false,
   gName: '',

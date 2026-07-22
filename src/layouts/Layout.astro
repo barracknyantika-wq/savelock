@@ -3,7 +3,7 @@ import '../styles/global.css';
 
 interface Props {
   title?: string;
-  tab?: 'today' | 'goals' | 'settings';
+  tab?: 'today' | 'report' | 'goals' | 'settings';
 }
 
 const { title = 'SaveLock', tab = 'today' } = Astro.props;
@@ -11,6 +11,7 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
 
 const tabs = [
   { id: 'today', href: `${base}/`, label: 'Today' },
+  { id: 'report', href: `${base}/report/`, label: 'Report' },
   { id: 'goals', href: `${base}/goals/`, label: 'Goals' },
   { id: 'settings', href: `${base}/settings/`, label: 'Settings' },
 ];
@@ -59,16 +60,16 @@ const tabs = [
 
     <!-- floating pill nav, off the bottom edge -->
     <nav
-      class="fixed bottom-[calc(env(safe-area-inset-bottom)+14px)] left-1/2 z-40 w-[min(88%,340px)] -translate-x-1/2"
+      class="fixed bottom-[calc(env(safe-area-inset-bottom)+14px)] left-1/2 z-40 w-[min(92%,380px)] -translate-x-1/2"
       aria-label="Main"
     >
-      <div class="paper-dark flex items-end justify-around rounded-full px-4 pb-2 pt-2">
+      <div class="paper-dark flex items-end justify-around rounded-full px-3 pb-2 pt-2">
         {
           tabs.map((t) => (
             <a
               href={t.href}
               aria-current={t.id === tab ? 'page' : undefined}
-              class="flex min-h-12 min-w-16 flex-col items-center justify-end gap-0.5"
+              class="flex min-h-12 min-w-14 flex-col items-center justify-end gap-0.5"
             >
               <span
                 class:list={[
@@ -83,6 +84,11 @@ const tabs = [
                     <rect x="2.5" y="6" width="19" height="12" rx="2.5" />
                     <circle cx="12" cy="12" r="2.4" />
                     <path d="M6 12h.01M18 12h.01" />
+                  </svg>
+                )}
+                {t.id === 'report' && (
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M4 20V10M11 20V4M18 20v-7" />
                   </svg>
                 )}
                 {t.id === 'goals' && (
