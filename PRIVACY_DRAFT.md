@@ -18,10 +18,16 @@ payment itself.
 
 ## What data is collected, and why
 
-**If you never sign in:** nothing leaves your device. All data lives in
-your browser's/app's local storage only.
+**If this deployment has no Supabase project connected at all:** nothing
+ever leaves your device, there is no sign-in screen and no way to send
+anything anywhere. All data lives in your browser's/app's local storage
+only. This is a build-time choice, not something you can turn on or off from
+inside the app.
 
-**If you sign in** (phone number + SMS code, via Supabase Auth):
+**If this deployment does have a Supabase project connected:** signing in
+is required before the app can be used at all, it is not optional. You can
+sign in with a phone number and SMS code, or with a Google account. Once
+signed in:
 
 | Data | Why it's collected |
 |---|---|

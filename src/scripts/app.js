@@ -671,18 +671,64 @@ Alpine.data('badgesPage', () => ({
   },
 }));
 
-Alpine.data('accountPage', () => ({
+// Global, not page-scoped: the mandatory sign-in gate in Layout.astro needs
+// this exact same session/stage on every page (Home, Report, Goals,
+// Settings, Account), not a fresh independent copy per page. A plain
+// Alpine.data component can't do that across a full page navigation the
+// way a store can; every page's own JS still re-runs init() on load, but
+// they all read/write the one shared shape below.
+Alpine.store('auth', {
   cloudConfigured: isCloudConfigured(),
   session: null,
+  name: '',
   phone: '',
   otp: '',
-  // 'phone' | 'otp' | 'reconcile' | 'import' | 'signed-in'
-  stage: 'phone',
+  // 'checking' | 'phone' | 'otp' | 'reconcile' | 'import' | 'ready'
+  stage: 'checking',
   error: '',
   busy: false,
 
+  // True whenever the app must show only the sign-in gate: cloud sync is
+  // configured (so an account is possible at all) and we have not yet
+  // reached a fully resolved, signed-in state. Local-only builds
+  // (cloudConfigured false) are never blocked, that variant keeps working
+  // exactly as it always has.
+  get blocked() {
+    return this.cloudConfigured && this.stage !== 'ready';
+  },
+
+  // Google sign-in returns a name and email automatically; phone sign-in
+  // collects a name explicitly at signup (see sendCode below). Either way
+  // this is the one place that resolves to "the name to show this person".
+  get displayName() {
+    const u = this.session?.user;
+    return u?.user_metadata?.full_name || u?.user_metadata?.name || '';
+  },
+
+  // Phone sign-in has no email; Google sign-in has no phone. This is
+  // whichever one they actually used, shown alongside the name above.
+  get identity() {
+    const u = this.session?.user;
+    if (!u) return '';
+    return u.phone ? `+${u.phone}` : u.email || '';
+  },
+
+  get signInMethod() {
+    const u = this.session?.user;
+    if (!u) return '';
+    return u.phone ? 'phone' : 'google';
+  },
+
+  localHasData() {
+    const s = store();
+    return s.settings.dailyLimit > 0 || s.goals.length > 0 || s.spendLog.length > 0 || s.day.spends.length > 0;
+  },
+
   async init() {
-    if (!this.cloudConfigured) return;
+    if (!this.cloudConfigured) {
+      this.stage = 'ready';
+      return;
+    }
     // Read before anything else awaits: on the web build, a completed Google
     // redirect lands back here with the tokens in the URL fragment, and
     // supabase-js consumes that fragment as part of getSession() below. This
@@ -695,8 +741,10 @@ Alpine.data('accountPage', () => ({
       if (justCompletedGoogleSignIn) {
         await this.reconcile();
       } else {
-        this.stage = 'signed-in';
+        this.stage = 'ready';
       }
+    } else {
+      this.stage = 'phone';
     }
     onAuthStateChange((session) => {
       this.session = session;
@@ -714,27 +762,20 @@ Alpine.data('accountPage', () => ({
     });
   },
 
-  // Phone sign-in has no email/display name; Google sign-in has no phone.
-  // Either way a signed-in user gets exactly one thing worth showing here.
-  get identityOnFile() {
-    const u = this.session?.user;
-    if (!u) return '';
-    if (u.phone) return `+${u.phone}`;
-    if (u.email) return u.email;
-    return u.user_metadata?.full_name || u.user_metadata?.name || 'Signed in';
-  },
-
-  localHasData() {
-    const s = store();
-    return s.settings.dailyLimit > 0 || s.goals.length > 0 || s.spendLog.length > 0 || s.day.spends.length > 0;
-  },
-
   async sendCode() {
     this.error = '';
+    const name = this.name.trim();
     const phone = this.phone.trim();
-    if (!phone) return;
+    if (!name) {
+      this.error = 'Enter your name.';
+      return;
+    }
+    if (!phone) {
+      this.error = 'Enter your phone number.';
+      return;
+    }
     this.busy = true;
-    const { error } = await sendOtp(phone);
+    const { error } = await sendOtp(phone, name);
     this.busy = false;
     if (error) {
       this.error = error;
@@ -780,12 +821,12 @@ Alpine.data('accountPage', () => ({
       this.stage = 'reconcile';
     } else if (remoteHasData && !localData) {
       await this.pullNow();
-      this.stage = 'signed-in';
+      this.stage = 'ready';
       toast('Synced');
     } else if (!remoteHasData && localData) {
       this.stage = 'import';
     } else {
-      this.stage = 'signed-in';
+      this.stage = 'ready';
     }
   },
 
@@ -801,7 +842,7 @@ Alpine.data('accountPage', () => ({
     this.busy = true;
     await pushState(store());
     this.busy = false;
-    this.stage = 'signed-in';
+    this.stage = 'ready';
     toast('Imported');
   },
 
@@ -809,7 +850,7 @@ Alpine.data('accountPage', () => ({
     this.busy = true;
     await this.pullNow();
     this.busy = false;
-    this.stage = 'signed-in';
+    this.stage = 'ready';
     toast('Synced');
   },
 
@@ -817,19 +858,20 @@ Alpine.data('accountPage', () => ({
     this.busy = true;
     await pushState(store());
     this.busy = false;
-    this.stage = 'signed-in';
+    this.stage = 'ready';
     toast('Synced');
   },
 
   async signOutOfAccount() {
     await cloudSignOut();
     this.session = null;
-    this.stage = 'phone';
+    this.stage = this.cloudConfigured ? 'phone' : 'ready';
+    this.name = '';
     this.phone = '';
     this.otp = '';
     toast('Signed out');
   },
-}));
+});
 
 Alpine.start();
 initNativeBridge(store());

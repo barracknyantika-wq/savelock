@@ -68,10 +68,16 @@ export function onAuthStateChange(callback) {
   return () => data.subscription.unsubscribe();
 }
 
-export async function sendOtp(phone) {
+// name is passed as signup metadata (the same mechanism Google's own
+// profile data arrives through), so it becomes session.user.user_metadata
+// once verified, exactly like a Google sign-in, and profiles.display_name
+// picks it up via the handle_new_user trigger for a genuinely new phone
+// number. It's only applied at account creation, GoTrue does not update an
+// existing user's metadata on a later signInWithOtp call.
+export async function sendOtp(phone, name) {
   const c = client();
   if (!c) return { error: 'Cloud sync is not configured for this build.' };
-  const { error } = await c.auth.signInWithOtp({ phone });
+  const { error } = await c.auth.signInWithOtp({ phone, options: { data: { full_name: name } } });
   return { error: error?.message || null };
 }
 
