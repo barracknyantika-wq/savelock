@@ -26,9 +26,20 @@
 //     genuinely untested against a live project (see SUPABASE_SETUP.md).
 
 import { createClient } from '@supabase/supabase-js';
+import { Capacitor } from '@capacitor/core';
+import { App } from '@capacitor/app';
+import { Browser } from '@capacitor/browser';
 
 const SUPABASE_URL = import.meta.env.PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
+
+// Google's own OAuth policy blocks signing in from an embedded WebView (the
+// exact environment a Capacitor app runs its UI in), so the native flow
+// can't just redirect the app's own window like the plain web build does.
+// Instead: open Google's consent screen in the system browser (Custom Tabs
+// on Android, via @capacitor/browser), and have it land back in this app
+// through a custom URL scheme the manifest registers as a deep link.
+const NATIVE_OAUTH_REDIRECT = 'com.savelock.app://auth-callback';
 
 export const isCloudConfigured = () => Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
@@ -75,6 +86,73 @@ export async function signOut() {
   const c = client();
   if (!c) return;
   await c.auth.signOut();
+}
+
+// ---- Google Sign-In (second auth option, alongside phone OTP) --------------
+//
+// Web build: a normal redirect. supabase-js navigates the current window to
+// Google, Google sends the user back to redirectTo with the session in the
+// URL, and supabase-js's built-in detectSessionInUrl picks it up on the next
+// page load automatically. Nothing extra needed here.
+//
+// Native build: skipBrowserRedirect so supabase-js just hands back the
+// Google URL instead of trying to navigate the WebView (which Google would
+// refuse anyway). That URL is opened in the system browser; the resulting
+// redirect to NATIVE_OAUTH_REDIRECT is caught by onGoogleAuthRedirect below
+// once the manifest's deep link delivers it back to this app.
+
+export async function signInWithGoogle() {
+  const c = client();
+  if (!c) return { error: 'Cloud sync is not configured for this build.' };
+  const native = Capacitor.isNativePlatform();
+  const { data, error } = await c.auth.signInWithOAuth({
+    provider: 'google',
+    options: native
+      ? { redirectTo: NATIVE_OAUTH_REDIRECT, skipBrowserRedirect: true }
+      : { redirectTo: `${window.location.origin}/account/` },
+  });
+  if (error) return { error: error.message };
+  if (native && data?.url) {
+    await Browser.open({ url: data.url });
+  }
+  return { error: null };
+}
+
+// Parses the tokens out of the deep-link redirect URL and completes the
+// session. Supabase's default (implicit) flow returns them in the URL
+// fragment, e.g. com.savelock.app://auth-callback#access_token=...&
+// refresh_token=...; an error from Google/Supabase comes back the same way
+// as error/error_description instead.
+async function completeGoogleSignIn(url) {
+  const c = client();
+  if (!c) return null;
+  const hashIndex = url.indexOf('#');
+  if (hashIndex === -1) return null;
+  const params = new URLSearchParams(url.slice(hashIndex + 1));
+  const access_token = params.get('access_token');
+  const refresh_token = params.get('refresh_token');
+  if (!access_token || !refresh_token) return null;
+  const { data, error } = await c.auth.setSession({ access_token, refresh_token });
+  return error ? null : data.session;
+}
+
+// Registers the deep-link listener that catches the native OAuth redirect.
+// callback receives the completed session (or null if the redirect wasn't
+// actually a completed sign-in, e.g. some unrelated deep link). No-op
+// everywhere but a native build, same as every other Capacitor-only hook
+// in this codebase.
+export function onGoogleAuthRedirect(callback) {
+  if (!Capacitor.isNativePlatform()) return () => {};
+  let handle;
+  App.addListener('appUrlOpen', async ({ url }) => {
+    if (!url || !url.startsWith(NATIVE_OAUTH_REDIRECT)) return;
+    const session = await completeGoogleSignIn(url);
+    Browser.close().catch(() => {});
+    callback(session);
+  }).then((h) => {
+    handle = h;
+  });
+  return () => handle?.remove();
 }
 
 // ---- shape mapping: local store <-> Supabase rows --------------------------

@@ -24,6 +24,8 @@ import {
   hasRemoteData,
   pullState,
   pushState,
+  signInWithGoogle,
+  onGoogleAuthRedirect,
 } from './cloud-sync.js';
 
 window.Alpine = Alpine;
@@ -524,15 +526,45 @@ Alpine.data('accountPage', () => ({
 
   async init() {
     if (!this.cloudConfigured) return;
+    // Read before anything else awaits: on the web build, a completed Google
+    // redirect lands back here with the tokens in the URL fragment, and
+    // supabase-js consumes that fragment as part of getSession() below. This
+    // is the only way to tell "a sign-in just completed" apart from "this is
+    // an ordinary page load of an already-signed-in session" — both resolve
+    // to the same session from getSession() alone.
+    const justCompletedGoogleSignIn = window.location.hash.includes('access_token');
     this.session = await getSession();
-    if (this.session) this.stage = 'signed-in';
+    if (this.session) {
+      if (justCompletedGoogleSignIn) {
+        await this.reconcile();
+      } else {
+        this.stage = 'signed-in';
+      }
+    }
     onAuthStateChange((session) => {
       this.session = session;
     });
+    // Native only: catches the deep-link redirect once the system browser
+    // hands control back after Google's consent screen. Routed through the
+    // exact same reconcile() used after phone OTP and the web redirect
+    // above, so the import/reconcile decision behaves identically
+    // regardless of which method or platform signed in.
+    onGoogleAuthRedirect(async (session) => {
+      if (!session) return;
+      this.session = session;
+      this.busy = false;
+      await this.reconcile();
+    });
   },
 
-  get phoneOnFile() {
-    return this.session?.user?.phone ? `+${this.session.user.phone}` : '';
+  // Phone sign-in has no email/display name; Google sign-in has no phone.
+  // Either way a signed-in user gets exactly one thing worth showing here.
+  get identityOnFile() {
+    const u = this.session?.user;
+    if (!u) return '';
+    if (u.phone) return `+${u.phone}`;
+    if (u.email) return u.email;
+    return u.user_metadata?.full_name || u.user_metadata?.name || 'Signed in';
   },
 
   localHasData() {
@@ -553,6 +585,20 @@ Alpine.data('accountPage', () => ({
     }
     this.stage = 'otp';
     toast('Code sent');
+  },
+
+  // Web build: signInWithOAuth navigates the page away to Google, so this
+  // never actually returns before the redirect happens. Native build: it
+  // opens the system browser and returns right away; the sign-in itself
+  // completes later via the onGoogleAuthRedirect listener registered above.
+  async startGoogleSignIn() {
+    this.error = '';
+    this.busy = true;
+    const { error } = await signInWithGoogle();
+    if (error) {
+      this.busy = false;
+      this.error = error;
+    }
   },
 
   async verifyCode() {

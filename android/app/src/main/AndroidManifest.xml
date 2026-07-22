@@ -22,6 +22,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!--
+              Deep link for completing Google Sign-In (Supabase OAuth). The
+              consent screen runs in the system browser, not this WebView
+              (Google blocks OAuth from embedded WebViews) — this is only
+              how the browser hands control back to the app afterward.
+              com.savelock.app://auth-callback must also be added to
+              Supabase's Redirect URLs allowlist, see SUPABASE_SETUP.md.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.savelock.app" android:host="auth-callback" />
+            </intent-filter>
+
         </activity>
 
         <provider
