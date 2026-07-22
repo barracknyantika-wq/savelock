@@ -304,7 +304,7 @@ class SmsReceiver : BroadcastReceiver() {
     private fun handleReceivedNotification(context: Context, sp: SharedPreferences, tx: MpesaTransaction) {
         if (!sp.getBoolean(KEY_NOTIFY_RECEIVED, true)) return
         val currency = sp.getString(KEY_BUDGET_CURRENCY, "KSh") ?: "KSh"
-        val text = "Received $currency ${fmt(tx.amount)} from ${tx.counterparty} — not counted as spending."
+        val text = "Received $currency ${fmt(tx.amount)} from ${tx.counterparty}. Not counted as spending."
         notify(context, tx.mpesaCode, "SaveLock", text)
     }
 
@@ -314,9 +314,9 @@ class SmsReceiver : BroadcastReceiver() {
         if (!sp.getBoolean(KEY_NOTIFY_RECEIVED, true)) return
         val currency = sp.getString(KEY_BUDGET_CURRENCY, "KSh") ?: "KSh"
         val text = when (tx.type) {
-            "fuliza_repayment" -> "$currency ${fmt(tx.amount)} used to repay Fuliza M-PESA — not counted as new spending."
+            "fuliza_repayment" -> "$currency ${fmt(tx.amount)} used to repay Fuliza M-PESA. Not counted as new spending."
             "fuliza_activation" -> "Fuliza M-PESA activated. Limit: $currency ${fmt(tx.amount)}."
-            else -> "Fuliza M-PESA fee of $currency ${fmt(tx.amount)} charged — not counted as new spending."
+            else -> "Fuliza M-PESA fee of $currency ${fmt(tx.amount)} charged. Not counted as new spending."
         }
         notify(context, tx.mpesaCode, "SaveLock", text)
     }

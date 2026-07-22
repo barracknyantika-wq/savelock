@@ -2,7 +2,7 @@
 import Layout from '../layouts/Layout.astro';
 ---
 
-<Layout title="SaveLock — Today" tab="today">
+<Layout title="SaveLock: Today" tab="today">
   <main x-data="todayPage" class="mx-auto w-full max-w-md px-5 pb-44 pt-7">
     <header class="mb-7 flex items-baseline justify-between px-1">
       <h1 class="font-display text-xl font-semibold tracking-tight text-cream">SaveLock</h1>
@@ -98,7 +98,7 @@ import Layout from '../layouts/Layout.astro';
             x-show="$store.sl.remaining < 0"
             x-cloak
             class="mt-2 text-sm font-medium text-brick"
-            x-text="'⚠ ' + $store.sl.money(Math.abs($store.sl.remaining)) + ' over — today ends the streak'"
+            x-text="'⚠ ' + $store.sl.money(Math.abs($store.sl.remaining)) + ' over. Today ends the streak'"
           ></p>
 
           <!-- tick-mark arc gauge -->
@@ -127,7 +127,7 @@ import Layout from '../layouts/Layout.astro';
               :class="$store.sl.streak.count > 0 ? 'text-ochre-deep' : 'text-ink-3'"
               x-text="$store.sl.streak.count > 0
                 ? $store.sl.streak.count + ($store.sl.streak.count === 1 ? ' day' : ' days') + ' under budget'
-                : 'No streak yet — end today at zero or better'"
+                : 'No streak yet. End today at zero or better'"
             ></p>
             <span x-show="$store.sl.streak.count > 0" x-cloak x-html="$squiggle()"></span>
           </div>
@@ -217,7 +217,7 @@ import Layout from '../layouts/Layout.astro';
             <span
               class="normal-case tracking-normal"
               x-show="$store.sl.day.spends.length"
-              x-text="'— ' + $store.sl.money($store.sl.spentToday) + ' spent'"
+              x-text="'· ' + $store.sl.money($store.sl.spentToday) + ' spent'"
             ></span>
           </h2>
 
@@ -271,7 +271,7 @@ import Layout from '../layouts/Layout.astro';
                   @click="openReclassify(s.id)"
                   class="pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-ink-3 active:text-ochre-deep"
                   :aria-label="'Move ' + $store.sl.money(s.amount) + ' to a savings goal instead'"
-                  title="Not spending — move to a goal"
+                  title="Not spending, move to a goal"
                 >
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <rect x="5" y="10.5" width="14" height="9" rx="2.2" />
@@ -326,7 +326,7 @@ import Layout from '../layouts/Layout.astro';
           <h3 class="font-display text-xl font-semibold tracking-tight">Not spending?</h3>
           <p class="mt-1 text-sm font-light text-ink-2">
             <span x-text="reclassifySpend ? $store.sl.money(reclassifySpend.amount) : ''"></span>
-            moves off today's spending and into a goal's saved total instead. No money moves — this only fixes the score.
+            moves off today's spending and into a goal's saved total instead. No money moves. This only fixes the score.
           </p>
           <div class="mt-4 space-y-2">
             <template x-for="g in activeGoals" :key="g.id">

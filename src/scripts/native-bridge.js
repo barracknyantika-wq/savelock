@@ -77,7 +77,7 @@ export async function syncReminders(store) {
     notifications.push({
       id: REMINDER_IDS.morning,
       title: 'SaveLock',
-      body: "Good morning — check today's allowance before you spend.",
+      body: "Good morning. Check today's allowance before you spend.",
       schedule: { on: parseTime(store.settings.reminderMorningTime), repeats: true },
     });
   }
@@ -85,7 +85,7 @@ export async function syncReminders(store) {
     notifications.push({
       id: REMINDER_IDS.evening,
       title: 'SaveLock',
-      body: "Evening check-in — how did today's spending go?",
+      body: "Evening check-in: how did today's spending go?",
       schedule: { on: parseTime(store.settings.reminderEveningTime), repeats: true },
     });
   }
@@ -127,7 +127,7 @@ export async function syncWeeklySummary(store) {
       notifications: [
         {
           id: REMINDER_IDS.weekly,
-          title: 'SaveLock — weekly summary',
+          title: 'SaveLock weekly summary',
           body,
           schedule: { on: { weekday: Weekday.Sunday, hour: 19, minute: 0 }, repeats: true },
         },

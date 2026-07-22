@@ -2,7 +2,7 @@
 import Layout from '../layouts/Layout.astro';
 ---
 
-<Layout title="SaveLock — Goals" tab="goals">
+<Layout title="SaveLock: Goals" tab="goals">
   <main x-data="goalsPage" class="mx-auto w-full max-w-md px-5 pb-44 pt-7">
     <header class="mb-2 flex items-center justify-between px-1">
       <h1 class="font-display text-xl font-semibold tracking-tight text-cream">Goals</h1>
@@ -16,7 +16,7 @@ import Layout from '../layouts/Layout.astro';
     </header>
 
     <p class="mb-7 px-1 text-xs font-light leading-relaxed text-cream-2">
-      The real money stays in your M-Shwari Lock or bank — SaveLock only keeps score.
+      The real money stays in your M-Shwari Lock or bank. SaveLock only keeps score.
     </p>
 
     <p
@@ -35,7 +35,7 @@ import Layout from '../layouts/Layout.astro';
       x-cloak
       class="rotate-[-1deg] rounded-2xl border border-dashed border-charcoal-2 px-6 py-7 text-center text-sm leading-relaxed text-cream-2"
     >
-      No goals yet. Lock a target and a date — the waiting is the work.
+      No goals yet. Lock a target and a date. The waiting is the work.
     </p>
 
     <!-- Active goals -->
@@ -80,7 +80,7 @@ import Layout from '../layouts/Layout.astro';
               </p>
               <p class="mt-1 text-sm font-light leading-relaxed text-ink-2">
                 <span x-show="!$store.sl.matured(g)" x-text="$store.sl.daysLeft(g) + ' days ahead of schedule. '"></span>
-                The money is in your real account, not here. Withdraw it there — then mark this done.
+                The money is in your real account, not here. Withdraw it there, then mark this done.
               </p>
               <button
                 type="button"
@@ -174,7 +174,7 @@ import Layout from '../layouts/Layout.astro';
           <div class="mx-auto mb-3 h-1.5 w-10 rounded-full bg-paper-line" aria-hidden="true"></div>
           <h3 class="font-display text-xl font-semibold tracking-tight">New goal</h3>
           <p class="mt-1 text-xs font-light text-ink-2">
-            Match it to a real lock — the one where the money actually sits.
+            Match it to a real lock, the one where the money actually sits.
           </p>
           <label class="mt-4 block text-sm font-medium text-ink-2" for="goal-name">Name</label>
           <input
@@ -301,7 +301,7 @@ import Layout from '../layouts/Layout.astro';
             </div>
 
             <p class="px-1 text-sm font-light leading-relaxed text-cream-2">
-              No money moves — it never left your real account. This only records that you didn't wait.
+              No money moves. It never left your real account. This only records that you didn't wait.
               If something urgent came up, that's a fair call. If it's just an itch, close this screen.
             </p>
           </div>

@@ -3,7 +3,7 @@ import Layout from '../layouts/Layout.astro';
 const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
 ---
 
-<Layout title="SaveLock — Settings" tab="settings">
+<Layout title="SaveLock: Settings" tab="settings">
   <main x-data="settingsPage" class="mx-auto w-full max-w-md px-5 pb-44 pt-7">
     <h1 class="mb-7 px-1 font-display text-xl font-semibold tracking-tight text-cream">Settings</h1>
 
@@ -67,7 +67,7 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
       <section class="paper ml-3 rotate-[0.6deg] p-5">
         <h2 class="font-display text-lg font-semibold text-ink">Currency label</h2>
         <p class="mt-1 text-sm font-light text-ink-2">
-          Just a label on the numbers — nothing is converted.
+          Just a label on the numbers. Nothing is converted.
         </p>
         <form class="mt-3 flex gap-3" @submit.prevent="saveCurrency">
           <label class="sr-only" for="set-currency">Currency label</label>
@@ -92,8 +92,8 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
       <section x-show="native" x-cloak class="paper mr-3 rotate-[-0.4deg] p-5">
         <h2 class="font-display text-lg font-semibold text-ink">Auto-detect M-Pesa transactions</h2>
         <p class="mt-1 text-sm font-light leading-relaxed text-ink-2">
-          When it's on, SaveLock reads only M-Pesa confirmation texts on this phone — nothing
-          else — to log spends and notify you within seconds. It never reads your other
+          When it's on, SaveLock reads only M-Pesa confirmation texts on this phone, nothing
+          else, to log spends and notify you within seconds. It never reads your other
           messages, and no message content leaves this device.
         </p>
 
@@ -148,7 +148,7 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
               </button>
             </label>
             <p class="text-xs font-light text-ink-3">
-              Transactions are always logged silently in the background — these only control whether a notification pops up.
+              Transactions are always logged silently in the background. These only control whether a notification pops up.
             </p>
 
             <div class="border-t border-dashed border-paper-line pt-3">
@@ -373,7 +373,7 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
         <h2 class="font-display text-lg font-semibold text-ink">Backup</h2>
         <p class="mt-1 text-sm font-light leading-relaxed text-ink-2">
           Everything lives only on this device. Export a file before clearing your browser
-          or switching phones — import it to pick up where you left off.
+          or switching phones. Import it to pick up where you left off.
         </p>
         <div class="mt-3 flex gap-3">
           <button
@@ -398,8 +398,8 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
       <section class="paper ml-2 rotate-[0.4deg] p-5">
         <h2 class="font-display text-lg font-semibold text-ink">Start over</h2>
         <p class="mt-1 text-sm font-light text-ink-2">
-          Erases the limit, streak, goals and history on this device. There is no undo —
-          export a backup first if in doubt.
+          Erases the limit, streak, goals and history on this device. There is no undo.
+          Export a backup first if in doubt.
         </p>
         <button
           type="button"
@@ -416,8 +416,8 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
       <section class="px-2 pt-2 text-xs font-light leading-relaxed text-cream-2">
         <p>
           SaveLock is a discipline layer, not a wallet. It holds no money and connects to no
-          bank. The real cash stays wherever you locked it — this app just keeps score while
-          you wait. Everything stays on this device unless you choose to sign in above — signing
+          bank. The real cash stays wherever you locked it, this app just keeps score while
+          you wait. Everything stays on this device unless you choose to sign in above, signing
           in only syncs your own allowance, spends, goals, and streak to your account, never
           anything else, and never with anyone but you.
         </p>

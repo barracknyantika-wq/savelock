@@ -3,7 +3,7 @@ import Layout from '../layouts/Layout.astro';
 const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
 ---
 
-<Layout title="SaveLock — Account">
+<Layout title="SaveLock: Account">
   <main x-data="accountPage" class="mx-auto w-full max-w-md px-5 pb-44 pt-7">
     <header class="mb-7 flex items-center gap-3 px-1">
       <a
@@ -24,8 +24,8 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
         <h2 class="font-display text-lg font-semibold text-ink">Cloud sync isn't set up</h2>
         <p class="mt-2 text-sm font-light leading-relaxed text-ink-2">
           This build of SaveLock has no Supabase project connected, so everything stays local-only
-          on this device — which is exactly how the app has always worked. Nothing about this screen
-          changes that.
+          on this device. That's exactly how the app has always worked, and nothing about this
+          screen changes that.
         </p>
       </section>
     </template>
@@ -56,8 +56,8 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
           <section class="paper relative rotate-[-0.5deg] p-5">
             <h2 class="font-display text-lg font-semibold text-ink">Sign in</h2>
             <p class="mt-1 text-sm font-light leading-relaxed text-ink-2">
-              Sync your allowance, goals, and streak across devices. This app holds no money —
-              signing in only lets your own tracking data follow you, nothing else.
+              Sync your allowance, goals, and streak across devices. This app holds no money.
+              Signing in only lets your own tracking data follow you, nothing else.
             </p>
             <form class="mt-4" @submit.prevent="sendCode">
               <label class="block text-sm font-medium text-ink-2" for="phone-input">Phone number</label>
@@ -145,7 +145,7 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
             <h2 class="font-display text-lg font-semibold text-ink">Two copies of your data exist</h2>
             <p class="mt-2 text-sm font-light leading-relaxed text-ink-2">
               This device already has its own tracking, and your account already has data from
-              somewhere else. Pick which one to keep — the other is not merged in automatically, so
+              somewhere else. Pick which one to keep. The other is not merged in automatically, so
               nothing gets silently combined or lost without you choosing.
             </p>
             <div class="mt-4 space-y-2">

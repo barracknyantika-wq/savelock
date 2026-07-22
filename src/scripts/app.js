@@ -55,9 +55,9 @@ function toast(message) {
 Alpine.magic('toast', () => toast);
 
 const MILESTONE_COPY = {
-  25: (name) => `Quarter of the way to ${name} — keep going.`,
+  25: (name) => `Quarter of the way to ${name}. Keep going.`,
   50: (name) => `Halfway to ${name}. Nice pace.`,
-  75: (name) => `75% there — ${name} is almost within reach.`,
+  75: (name) => `75% there. ${name} is almost within reach.`,
   100: (name) => `${name} is fully funded!`,
 };
 
@@ -148,7 +148,7 @@ Alpine.data('todayPage', () => ({
     this.reclassifyId = null;
     if (!res) return;
     const milestone = milestoneText(res.milestones, res.goal.name);
-    this.confirmBanner = `${store().money(spend.amount)} moved to savings — added to your goal, not counted as spending.${milestone ? ' ' + milestone : ''}`;
+    this.confirmBanner = `${store().money(spend.amount)} moved to savings, added to your goal, not counted as spending.${milestone ? ' ' + milestone : ''}`;
     setTimeout(() => (this.confirmBanner = ''), 5000);
   },
 
