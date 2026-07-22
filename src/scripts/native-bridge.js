@@ -190,6 +190,7 @@ export function initNativeBridge(store) {
   pushNotificationPrefs(store);
   syncReminders(store);
   syncWeeklySummary(store);
+  checkReconciliation(store);
 
   window.addEventListener('savelock:persist', () => pushBudget(store));
 
@@ -197,6 +198,7 @@ export function initNativeBridge(store) {
     drain(store);
     pushBudget(store);
     syncWeeklySummary(store);
+    checkReconciliation(store);
   }).catch(() => {});
 
   document.addEventListener('visibilitychange', () => {
@@ -221,4 +223,51 @@ export async function requestSmsPermission() {
   } catch {
     return null;
   }
+}
+
+// "Deep SMS reconciliation" only — requests just the readSms alias,
+// separately from the core sms/notifications permissions above, so opting
+// into this never re-prompts for (or silently piggybacks on) those.
+// checkSmsPermission() above already reports readSms's state too, since it
+// asks for every declared alias's status in one call.
+export async function requestReadSmsPermission() {
+  if (!isNative()) return null;
+  try {
+    return await SmsMpesa.requestPermissions({ permissions: ['readSms'] });
+  } catch {
+    return null;
+  }
+}
+
+// Reads M-Pesa messages already in the inbox since `sinceMs`, for comparing
+// against what was actually logged. Requires readSms to already be granted;
+// returns an empty list rather than throwing if it isn't (or anything else
+// goes wrong), consistent with this bridge's "never break the app" stance.
+export async function reconcileInbox(sinceMs) {
+  if (!isNative()) return [];
+  try {
+    const { transactions } = await SmsMpesa.reconcileInbox({ sinceMs });
+    return transactions || [];
+  } catch {
+    return [];
+  }
+}
+
+// Runs the opt-in reconciliation check at most once per calendar day, on
+// app open/resume. There's no true OS-level background scheduling here
+// (that would need a foreground service or WorkManager) — this is a
+// best-effort "checked the next time you open the app each day," not a
+// guaranteed daily background job. Silently does nothing unless the user
+// has both turned the feature on and already granted readSms.
+export async function checkReconciliation(store) {
+  if (!isNative() || !store.settings.deepReconciliationEnabled) return;
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  if (store.lastReconciliationCheck === today) return;
+  const perms = await checkSmsPermission();
+  if (perms?.readSms !== 'granted') return;
+  const sinceMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const transactions = await reconcileInbox(sinceMs);
+  const missed = store.reconcileAgainstInbox(transactions);
+  store.recordReconciliationCheck(missed);
 }

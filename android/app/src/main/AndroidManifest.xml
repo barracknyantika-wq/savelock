@@ -57,11 +57,21 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!--
-      Deliberately RECEIVE_SMS only, not READ_SMS: the app only ever sees
-      the message contained in the SMS_RECEIVED broadcast extras, never the
-      device's SMS history/inbox. POST_NOTIFICATIONS is required at runtime
-      on Android 13+ for the confirmation notification to be allowed to show.
+      Deliberately RECEIVE_SMS only, not READ_SMS, for the core auto-detect
+      feature: it only ever sees the message contained in the SMS_RECEIVED
+      broadcast extras, never the device's SMS history/inbox.
+      POST_NOTIFICATIONS is required at runtime on Android 13+ for the
+      confirmation notification to be allowed to show.
     -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+      READ_SMS is separate: only used for the opt-in "Deep SMS
+      reconciliation" feature (off by default), which reads M-Pesa messages
+      from the inbox specifically to double-check nothing was missed by the
+      always-on auto-detect above. Never requested unless the user turns
+      that feature on from Settings, with its own consent explanation first.
+    -->
+    <uses-permission android:name="android.permission.READ_SMS" />
 </manifest>

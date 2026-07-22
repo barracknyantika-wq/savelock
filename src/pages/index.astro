@@ -9,6 +9,40 @@ import Layout from '../layouts/Layout.astro';
       <p class="text-sm font-light text-cream-2" x-text="$store.sl.dateLong()"></p>
     </header>
 
+    <!-- Deep SMS reconciliation alert: transactions seen in the inbox but never logged -->
+    <section
+      x-show="$store.sl.reconciliationAlert.length"
+      x-cloak
+      class="paper relative mb-5 rotate-[-0.6deg] border-brick/40 p-5"
+    >
+      <h2 class="font-display text-lg font-semibold text-brick">
+        <span x-text="$store.sl.reconciliationAlert.length"></span>
+        <span x-text="$store.sl.reconciliationAlert.length === 1 ? 'transaction' : 'transactions'"></span>
+        may not have been captured
+      </h2>
+      <ul class="mt-2 space-y-1 text-sm text-ink-2">
+        <template x-for="tx in $store.sl.reconciliationAlert" :key="tx.mpesaCode">
+          <li x-text="$store.sl.money(tx.amount) + ' · ' + (tx.counterparty || tx.type)"></li>
+        </template>
+      </ul>
+      <div class="mt-3 flex gap-3">
+        <button
+          type="button"
+          @click="$store.sl.dismissReconciliationAlert(); $toast('Dismissed')"
+          class="pressable min-h-11 flex-1 rounded-xl border border-paper-line text-sm font-medium text-ink-2"
+        >
+          Dismiss
+        </button>
+        <button
+          type="button"
+          @click="$store.sl.drainNativeTransactions($store.sl.reconciliationAlert); $store.sl.dismissReconciliationAlert(); $toast('Logged')"
+          class="pressable min-h-11 flex-1 rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"
+        >
+          Log them
+        </button>
+      </div>
+    </section>
+
     <!-- First run: no daily limit set yet -->
     <section x-show="!$store.sl.hasLimit" x-cloak class="paper relative rotate-[-1.2deg] p-6">
       <span class="tape" aria-hidden="true"></span>

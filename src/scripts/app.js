@@ -7,6 +7,8 @@ import {
   pushNotificationPrefs,
   checkSmsPermission,
   requestSmsPermission,
+  requestReadSmsPermission,
+  reconcileInbox,
   nativeReload,
   syncReminders,
   syncWeeklySummary,
@@ -282,9 +284,31 @@ Alpine.data('settingsPage', () => ({
     return this.smsPermState?.sms === 'denied';
   },
 
+  get reconciliationPermState() {
+    return this.smsPermState?.readSms || 'prompt';
+  },
+
   async enableSmsDetection() {
     this.smsPermState = await requestSmsPermission();
     if (this.smsGranted) pushNotificationPrefs(store());
+  },
+
+  toggleDeepReconciliation() {
+    store().setDeepReconciliation(!store().settings.deepReconciliationEnabled);
+    toast('Saved');
+  },
+
+  async grantDeepReconciliation() {
+    this.smsPermState = await requestReadSmsPermission();
+    if (this.reconciliationPermState === 'granted') this.checkReconciliationNow();
+  },
+
+  async checkReconciliationNow() {
+    const sinceMs = new Date(new Date().setHours(0, 0, 0, 0)).getTime();
+    const transactions = await reconcileInbox(sinceMs);
+    const missed = store().reconcileAgainstInbox(transactions);
+    store().recordReconciliationCheck(missed);
+    toast(missed.length ? `${missed.length} possibly missed` : 'All caught up');
   },
 
   toggleSmsNotifySpend() {

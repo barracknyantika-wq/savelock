@@ -74,6 +74,11 @@ function defaultState() {
       reminderEveningEnabled: false,
       reminderEveningTime: '20:00',
       weeklySummaryEnabled: false,
+      // Opt-in, off by default: reads the M-Pesa inbox (requires the
+      // separate readSms permission) specifically to double-check the
+      // always-on auto-detect above didn't miss anything. Never enabled
+      // without the user explicitly turning it on in Settings.
+      deepReconciliationEnabled: false,
     },
     day: { date: todayStr(), spends: [] },
     streak: { count: 0 },
@@ -84,6 +89,10 @@ function defaultState() {
     spendLog: [],
     goals: [],
     breaks: [],
+    // Date string of the last reconciliation check, so it only runs once
+    // per day, plus whatever it found last time (cleared once reviewed).
+    lastReconciliationCheck: null,
+    reconciliationAlert: [],
     // M-Pesa transaction codes already recorded, native or manual dedup —
     // an SMS re-delivered by the OS (or re-drained after a crash) can never
     // be logged twice. Bounded so it can't grow forever.
@@ -124,6 +133,7 @@ function load() {
       stats: { ...base.stats, ...(saved.stats || {}) },
       challenge: saved.challenge && saved.challenge.startDate ? saved.challenge : null,
       challengeHistory: Array.isArray(saved.challengeHistory) ? saved.challengeHistory : [],
+      reconciliationAlert: Array.isArray(saved.reconciliationAlert) ? saved.reconciliationAlert : [],
     };
   } catch {
     return base;
@@ -145,13 +155,13 @@ export function registerStore(Alpine) {
     persist() {
       const {
         version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes,
-        fulizaEvents, badges, stats, challenge, challengeHistory,
+        fulizaEvents, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
       } = this;
       localStorage.setItem(
         KEY,
         JSON.stringify({
           version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes,
-          fulizaEvents, badges, stats, challenge, challengeHistory,
+          fulizaEvents, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
         })
       );
       window.dispatchEvent(new CustomEvent('savelock:persist'));
@@ -398,6 +408,36 @@ export function registerStore(Alpine) {
       this.persist();
     },
 
+    // ---- deep SMS reconciliation (opt-in) ------------------------------
+
+    setDeepReconciliation(enabled) {
+      this.settings.deepReconciliationEnabled = !!enabled;
+      if (!enabled) this.reconciliationAlert = [];
+      this.persist();
+    },
+
+    // Compares M-Pesa transactions read straight from the phone's inbox
+    // against what's already been logged (by mpesaCode), returning any
+    // that appear to have been missed by the always-on auto-detect. A
+    // read-only comparison; recordReconciliationCheck() below is what
+    // actually saves the result.
+    reconcileAgainstInbox(inboxTransactions) {
+      return (Array.isArray(inboxTransactions) ? inboxTransactions : []).filter(
+        (tx) => tx && tx.mpesaCode && !this.processedMpesaCodes.includes(tx.mpesaCode)
+      );
+    },
+
+    recordReconciliationCheck(missed) {
+      this.lastReconciliationCheck = todayStr();
+      this.reconciliationAlert = Array.isArray(missed) ? missed : [];
+      this.persist();
+    },
+
+    dismissReconciliationAlert() {
+      this.reconciliationAlert = [];
+      this.persist();
+    },
+
     // ---- categories -------------------------------------------------------
 
     addCategory(name) {
@@ -493,12 +533,13 @@ export function registerStore(Alpine) {
       }
       this.rollover();
       const amount = Math.round(tx.amount * 100) / 100;
+      const receivedAt = tx.receivedAt || Date.now();
       const record = {
         id: uid(),
         amount,
         note: tx.counterparty || '',
         category: tx.category || 'Other',
-        at: tx.receivedAt || Date.now(),
+        at: receivedAt,
         source: 'sms',
         mpesaCode: tx.mpesaCode,
         classification: 'spend',
@@ -507,7 +548,35 @@ export function registerStore(Alpine) {
         viaFuliza: !!tx.viaFuliza,
         fulizaAmount: tx.viaFuliza ? tx.fulizaAmount : null,
       };
-      this.day.spends.push(record);
+
+      // The native receiver queues transactions the moment an SMS arrives,
+      // even while the app is closed — this only drains them once the app
+      // is next opened, which can be days later. Attributing every drained
+      // transaction to "today" (the day it happens to be opened) would
+      // silently move real spending onto the wrong day, and misreport every
+      // day in between as zero-spend. Attribute by when the SMS actually
+      // arrived instead.
+      const txDate = todayStr(new Date(receivedAt));
+      if (txDate === this.day.date) {
+        this.day.spends.push(record);
+      } else if (txDate < this.day.date) {
+        this.spendLog.push(record);
+        if (this.spendLog.length > SPEND_LOG_CAP) {
+          this.spendLog = this.spendLog.slice(-SPEND_LOG_CAP);
+        }
+        const closedDay = this.history.find((h) => h.date === txDate);
+        if (closedDay) {
+          closedDay.spent = Math.round((closedDay.spent + amount) * 100) / 100;
+        }
+        // Deliberately not retroactively recalculating streak.count here —
+        // the streak reflects what was known as each day closed. Silently
+        // rewriting past streak outcomes days later, with no action from
+        // the user, would be its own source of confusion.
+      } else {
+        // Clock skew: the SMS timestamp is somehow after today. Treat it as
+        // today's rather than inventing a future day.
+        this.day.spends.push(record);
+      }
       this.persist();
       return record;
     },
@@ -671,7 +740,7 @@ export function registerStore(Alpine) {
     exportData() {
       const {
         version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes,
-        fulizaEvents, badges, stats, challenge, challengeHistory,
+        fulizaEvents, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
       } = this;
       return JSON.stringify(
         {
@@ -680,7 +749,7 @@ export function registerStore(Alpine) {
           exportedAt: new Date().toISOString(),
           data: {
             version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes,
-            fulizaEvents, badges, stats, challenge, challengeHistory,
+            fulizaEvents, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
           },
         },
         null,
