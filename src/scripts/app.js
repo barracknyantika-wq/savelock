@@ -35,6 +35,12 @@ import {
   getGoalMpesaBalance,
   refetchGoal,
   subscribeToRow,
+  createGroupChallenge,
+  joinGroupChallenge,
+  checkInToChallenge,
+  fetchMyGroupChallenges,
+  fetchGroupChallengeDetail,
+  subscribeToChallenge,
 } from './cloud-sync.js';
 
 window.Alpine = Alpine;
@@ -468,6 +474,169 @@ Alpine.data('goalsPage', () => ({
         this.wdError = row.result_desc || 'The withdrawal did not go through.';
       }
     });
+  },
+}));
+
+// Group savings challenges: the first genuinely shared-visibility feature
+// in this app. Unlike goalsPage, there is no local copy of this data to
+// read from Alpine.store('sl') — it's fetched straight from Supabase and
+// re-fetched (or pushed live via subscribeToChallenge) on change, cloud
+// only, same as the M-Pesa deposit/withdrawal flow. On a local-only build
+// (cloudConfigured false) this whole page has nothing to show, since a
+// shared challenge is meaningless without an account to share it through.
+Alpine.data('challengesPage', () => ({
+  cloudConfigured: isCloudConfigured(),
+  loading: true,
+  challenges: [],
+
+  newSheet: false,
+  cName: '',
+  cTarget: '',
+  cCadence: 'daily',
+  createdChallenge: null,
+  createBusy: false,
+
+  joinSheet: false,
+  joinCode: '',
+  joinError: '',
+  joinBusy: false,
+
+  selectedId: null,
+  detail: null,
+  detailUnsub: null,
+  checkinAmount: '',
+  checkinBusy: false,
+
+  async init() {
+    if (!this.cloudConfigured) {
+      this.loading = false;
+      return;
+    }
+    await this.refreshList();
+  },
+
+  async refreshList() {
+    this.loading = true;
+    this.challenges = await fetchMyGroupChallenges();
+    this.loading = false;
+  },
+
+  openNew() {
+    this.cName = '';
+    this.cTarget = '';
+    this.cCadence = 'daily';
+    this.createdChallenge = null;
+    this.newSheet = true;
+  },
+
+  async submitNew() {
+    const target = parseAmount(this.cTarget);
+    const name = this.cName.trim();
+    if (!name || !target) return;
+    this.createBusy = true;
+    const { error, challenge } = await createGroupChallenge(name, target, this.cCadence);
+    this.createBusy = false;
+    if (error) {
+      toast(error);
+      return;
+    }
+    this.createdChallenge = challenge;
+    await this.refreshList();
+    hapticSuccess();
+  },
+
+  closeNewSheet() {
+    this.newSheet = false;
+    this.createdChallenge = null;
+  },
+
+  copyJoinCode(code) {
+    navigator.clipboard?.writeText(code).then(() => toast('Code copied')).catch(() => {});
+  },
+
+  // navigator.share is only available on secure/mobile contexts; anywhere
+  // else this just falls back to the same clipboard copy above.
+  shareJoinCode(code, name) {
+    if (navigator.share) {
+      navigator
+        .share({ text: `Join my savings challenge "${name}" on SaveLock. Use code ${code}.` })
+        .catch(() => {});
+    } else {
+      this.copyJoinCode(code);
+    }
+  },
+
+  openJoin() {
+    this.joinCode = '';
+    this.joinError = '';
+    this.joinSheet = true;
+  },
+
+  async submitJoin() {
+    this.joinError = '';
+    const code = this.joinCode.trim();
+    if (!code) return;
+    this.joinBusy = true;
+    const { error, challenge } = await joinGroupChallenge(code);
+    this.joinBusy = false;
+    if (error) {
+      this.joinError = error;
+      return;
+    }
+    this.joinSheet = false;
+    await this.refreshList();
+    toast('Joined');
+    hapticSuccess();
+    this.openDetail(challenge.id);
+  },
+
+  async openDetail(id) {
+    this.selectedId = id;
+    this.detail = null;
+    await this.loadDetail();
+    if (this.detailUnsub) this.detailUnsub();
+    this.detailUnsub = subscribeToChallenge(id, () => this.loadDetail());
+  },
+
+  async loadDetail() {
+    this.detail = await fetchGroupChallengeDetail(this.selectedId);
+  },
+
+  closeDetail() {
+    if (this.detailUnsub) {
+      this.detailUnsub();
+      this.detailUnsub = null;
+    }
+    this.selectedId = null;
+    this.detail = null;
+  },
+
+  get myCheckedInThisPeriod() {
+    if (!this.detail) return false;
+    return this.detail.participants.find((p) => p.userId === this.detail.myUserId)?.checkedInThisPeriod || false;
+  },
+
+  async submitCheckin() {
+    let amount = 0;
+    if (this.checkinAmount.trim()) {
+      const parsed = parseAmount(this.checkinAmount);
+      if (parsed === null) {
+        toast('Enter a valid amount, or leave it blank.');
+        return;
+      }
+      amount = parsed;
+    }
+    this.checkinBusy = true;
+    const { error } = await checkInToChallenge(this.selectedId, amount);
+    this.checkinBusy = false;
+    if (error) {
+      toast(error);
+      return;
+    }
+    this.checkinAmount = '';
+    await this.loadDetail();
+    toast('Checked in');
+    hapticTap();
   },
 }));
 

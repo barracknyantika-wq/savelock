@@ -528,6 +528,159 @@ export function subscribeToRow(table, id, onChange) {
   };
 }
 
+// ---- group savings challenges ----------------------------------------------
+//
+// A shared streak/commitment feature, not shared money — a genuinely
+// different shape from everything above. Every table here (see migration
+// 0007_group_challenges.sql) is the first in this app where more than one
+// user can see the same rows, so unlike goals/spends/settings this is never
+// mirrored down into the local store: there is no local-first copy of a
+// group challenge, this talks to Supabase directly and reads it back live,
+// the same way the M-Pesa deposit/withdrawal flow above already does.
+// Every mutation goes through a Postgres RPC function rather than a plain
+// table insert (join by code, checking in, creating a challenge), because
+// each of those needs real server-side logic (generating a unique join
+// code, validating real membership, computing which period a checkin
+// belongs to) that a bare insert can't safely express — see 0007's own
+// comments for the reasoning on each one.
+
+function rowToGroupChallenge(r) {
+  return {
+    id: r.id,
+    creatorId: r.creator_id,
+    name: r.name,
+    targetAmount: Number(r.target_amount),
+    cadence: r.cadence,
+    joinCode: r.join_code,
+    status: r.status,
+    createdAt: r.created_at,
+  };
+}
+
+// 0007's RPC functions raise a short internal code (invalid_or_inactive_code,
+// not_a_participant, and so on) rather than a sentence, since that's what
+// the database actually knows for certain — this is the one place those
+// codes turn into something a person should actually read. Every RPC call
+// below routes its error through here, so a code this doesn't recognize
+// still surfaces (never silently swallowed), just not translated.
+function friendlyChallengeError(message) {
+  switch (message) {
+    case 'invalid_or_inactive_code':
+      return 'That code is not valid, or the challenge has ended.';
+    case 'not_a_participant':
+      return 'You need to join this group before you can check in.';
+    case 'invalid_cadence':
+      return 'Choose daily or weekly.';
+    case 'invalid_target_amount':
+      return 'Enter a target amount above zero.';
+    default:
+      return message;
+  }
+}
+
+export async function createGroupChallenge(name, targetAmount, cadence) {
+  const c = client();
+  if (!c) return { error: 'Cloud sync is not configured for this build.' };
+  const { data, error } = await c.rpc('create_group_challenge', {
+    p_name: name,
+    p_target_amount: targetAmount,
+    p_cadence: cadence,
+  });
+  if (error) return { error: friendlyChallengeError(error.message) };
+  return { error: null, challenge: rowToGroupChallenge(data) };
+}
+
+// The one and only way a join_code ever turns into membership.
+export async function joinGroupChallenge(code) {
+  const c = client();
+  if (!c) return { error: 'Cloud sync is not configured for this build.' };
+  const { data, error } = await c.rpc('join_challenge_by_code', { p_code: code });
+  if (error) return { error: friendlyChallengeError(error.message) };
+  return { error: null, challenge: rowToGroupChallenge(data) };
+}
+
+export async function checkInToChallenge(challengeId, amount) {
+  const c = client();
+  if (!c) return { error: 'Cloud sync is not configured for this build.' };
+  const { error } = await c.rpc('record_challenge_checkin', {
+    p_challenge_id: challengeId,
+    p_amount: amount,
+  });
+  if (error) return { error: friendlyChallengeError(error.message) };
+  return { error: null };
+}
+
+// Every challenge the signed-in user belongs to, whether they created it or
+// joined someone else's — RLS on group_challenges already resolves to
+// exactly that set, so this needs no explicit filter of its own.
+export async function fetchMyGroupChallenges() {
+  const c = client();
+  if (!c) return [];
+  const { data, error } = await c.from('group_challenges').select('*').order('created_at', { ascending: false });
+  if (error) return [];
+  return (data || []).map(rowToGroupChallenge);
+}
+
+// Everything the challenge view needs in one call: the challenge itself,
+// every participant with a fellow-member-safe display name (never their
+// phone or email, see challenge_participant_names in 0007) and whether
+// they've checked in for the CURRENT period, and the live-computed shared
+// streak. period_start comes from the server (challenge_current_period)
+// rather than being derived client side from created_at, so it can never
+// disagree with the server's own idea of "which period is today".
+export async function fetchGroupChallengeDetail(challengeId) {
+  const c = client();
+  if (!c) return null;
+  const [{ data: challengeRow }, { data: participantRows }, { data: nameRows }, { data: periodStart }, { data: streakData }, session] = await Promise.all([
+    c.from('group_challenges').select('*').eq('id', challengeId).maybeSingle(),
+    c.from('challenge_participants').select('*').eq('challenge_id', challengeId),
+    c.rpc('challenge_participant_names', { p_challenge_id: challengeId }),
+    c.rpc('challenge_current_period', { p_challenge_id: challengeId }),
+    c.rpc('group_challenge_streak', { p_challenge_id: challengeId }),
+    getSession(),
+  ]);
+  if (!challengeRow) return null;
+
+  const { data: checkinRows } = await c
+    .from('challenge_checkins')
+    .select('user_id')
+    .eq('challenge_id', challengeId)
+    .eq('period_start', periodStart);
+  const checkedInIds = new Set((checkinRows || []).map((r) => r.user_id));
+  const nameById = new Map((nameRows || []).map((r) => [r.user_id, r.display_name]));
+
+  return {
+    challenge: rowToGroupChallenge(challengeRow),
+    myUserId: session?.user?.id || null,
+    periodStart,
+    streak: Number(streakData) || 0,
+    participants: (participantRows || [])
+      .map((p) => ({
+        userId: p.user_id,
+        joinedAt: p.joined_at,
+        name: nameById.get(p.user_id) || 'Member',
+        checkedInThisPeriod: checkedInIds.has(p.user_id),
+      }))
+      .sort((a, b) => a.joinedAt.localeCompare(b.joinedAt)),
+  };
+}
+
+// Live updates when a fellow participant checks in or someone new joins,
+// same idea as subscribeToRow above but filtered to one challenge across
+// two tables instead of one row in one table.
+export function subscribeToChallenge(challengeId, onChange) {
+  const c = client();
+  if (!c || !challengeId) return () => {};
+  const channel = c
+    .channel(`group-challenge-${challengeId}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'challenge_checkins', filter: `challenge_id=eq.${challengeId}` }, onChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'challenge_participants', filter: `challenge_id=eq.${challengeId}` }, onChange)
+    .subscribe();
+  return () => {
+    c.removeChannel(channel);
+  };
+}
+
 // ---- wiring -----------------------------------------------------------------
 
 const PUSH_DEBOUNCE_MS = 2500;

@@ -3,16 +3,25 @@ import '../styles/global.css';
 
 interface Props {
   title?: string;
-  tab?: 'today' | 'report' | 'goals' | 'settings';
+  tab?: 'today' | 'report' | 'goals' | 'challenges' | 'settings';
 }
 
 const { title = 'SaveLock', tab = 'today' } = Astro.props;
 const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
 
+// Same check cloud-sync.js's own isCloudConfigured() makes, done directly
+// here (not by importing that module into frontmatter, which would also
+// pull in Capacitor's browser-only packages at build time) — a group
+// challenge is meaningless without an account to share it through, so a
+// local-only build never shows this tab at all, same convention as the
+// mandatory sign-in gate below never showing on a local-only build either.
+const cloudConfigured = Boolean(import.meta.env.PUBLIC_SUPABASE_URL && import.meta.env.PUBLIC_SUPABASE_ANON_KEY);
+
 const tabs = [
   { id: 'today', href: `${base}/`, label: 'Today' },
   { id: 'report', href: `${base}/report/`, label: 'Report' },
   { id: 'goals', href: `${base}/goals/`, label: 'Goals' },
+  ...(cloudConfigured ? [{ id: 'challenges', href: `${base}/challenges/`, label: 'Groups' }] : []),
   { id: 'settings', href: `${base}/settings/`, label: 'Settings' },
 ];
 ---
@@ -276,6 +285,14 @@ const tabs = [
                     <rect x="5" y="10.5" width="14" height="9.5" rx="2.5" />
                     <path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" />
                     <circle cx="12" cy="15.2" r="1.4" fill="currentColor" stroke="none" />
+                  </svg>
+                )}
+                {t.id === 'challenges' && (
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="9" cy="8.5" r="3" />
+                    <path d="M3.5 20c0-3.3 2.5-5.5 5.5-5.5s5.5 2.2 5.5 5.5" />
+                    <circle cx="17" cy="9" r="2.3" />
+                    <path d="M15.2 14.7c2.4.3 4.3 2.3 4.3 5.3" />
                   </svg>
                 )}
                 {t.id === 'settings' && (
