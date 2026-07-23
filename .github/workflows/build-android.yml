@@ -1,7 +1,9 @@
-# Builds the SaveLock native Android debug APK in the cloud.
+# Builds the SaveLock native Android debug APK in the cloud, and publishes
+# it as a GitHub Release under a fixed "latest" tag so there is always one
+# stable download link pointing at the newest build.
 #
 # This exists because RECEIVE_SMS/local Kotlin builds can be blocked by
-# machine-level antivirus/policy tooling that intercepts Gradle/AAPT — doing
+# machine-level antivirus/policy tooling that intercepts Gradle/AAPT â€” doing
 # the build on a GitHub-hosted runner sidesteps that entirely.
 name: Build Android APK
 on:
@@ -10,10 +12,11 @@ on:
       # Whichever of these two names the branch ends up under on GitHub.
       - sms-feature
       - claude/savelock-savings-pwa-x7dslo
+      - main
   # Lets you re-run this on demand from the Actions tab, any branch.
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   build-apk:
     runs-on: ubuntu-latest
@@ -29,7 +32,7 @@ jobs:
         with:
           distribution: temurin
           # AGP 8.x (this project uses 8.13.0, see android/build.gradle)
-          # requires JDK 21 — the project's Java compilation targets
+          # requires JDK 21 â€” the project's Java compilation targets
           # release 21, so JDK 17 fails with "invalid source release: 21".
           java-version: "21"
           cache: gradle
@@ -42,7 +45,7 @@ jobs:
       - name: Install npm dependencies
         run: npm install
       - name: Build web app
-        # Empty/unset secrets are fine — cloud sync just stays off (same as
+        # Empty/unset secrets are fine â€” cloud sync just stays off (same as
         # every local build until these are configured in repo Settings ->
         # Secrets and variables -> Actions). See SUPABASE_SETUP.md.
         env:
@@ -62,3 +65,10 @@ jobs:
           name: savelock-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+      - name: Publish as latest release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: latest
+          name: Latest build
+          body: Automatically updated on every build. This is always the newest APK.
+          files: android/app/build/outputs/apk/debug/app-debug.apk
