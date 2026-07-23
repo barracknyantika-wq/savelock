@@ -120,16 +120,20 @@ import Layout from '../layouts/Layout.astro';
             </p>
           </div>
 
-          <!-- streak, hand-underlined when alive -->
-          <div class="mt-5 flex flex-col items-center pb-1">
-            <p
-              class="text-sm font-medium"
-              :class="$store.sl.streak.count > 0 ? 'text-ochre-deep' : 'text-ink-3'"
-              x-text="$store.sl.streak.count > 0
-                ? $store.sl.streak.count + ($store.sl.streak.count === 1 ? ' day' : ' days') + ' under budget'
-                : 'No streak yet. End today at zero or better'"
-            ></p>
-            <span x-show="$store.sl.streak.count > 0" x-cloak x-html="$squiggle()"></span>
+          <!-- streak, hand-underlined when alive, with a small sprout that
+               visibly grows alongside the number, a second, quieter signal -->
+          <div class="mt-5 flex items-center justify-center gap-2 pb-1">
+            <div class="shrink-0" aria-hidden="true" x-html="$streakSprout($store.sl.streak.count)"></div>
+            <div class="flex flex-col items-center">
+              <p
+                class="text-sm font-medium"
+                :class="$store.sl.streak.count > 0 ? 'text-ochre-deep' : 'text-ink-3'"
+                x-text="$store.sl.streak.count > 0
+                  ? $store.sl.streak.count + ($store.sl.streak.count === 1 ? ' day' : ' days') + ' under budget'
+                  : 'No streak yet. End today at zero or better'"
+              ></p>
+              <span x-show="$store.sl.streak.count > 0" x-cloak x-html="$squiggle()"></span>
+            </div>
           </div>
         </section>
 
@@ -239,7 +243,13 @@ import Layout from '../layouts/Layout.astro';
           </p>
           <ul x-show="$store.sl.day.spends.length" x-cloak class="mt-1 divide-y divide-dashed divide-paper-line">
             <template x-for="s in [...$store.sl.day.spends].reverse()" :key="s.id">
-              <li class="flex items-center gap-2 py-2.5">
+              <li class="relative flex items-center gap-2 py-2.5">
+                <div
+                  x-show="$store.sl.lastSpendId === s.id"
+                  x-cloak
+                  class="animate-ink-pop pointer-events-none absolute -left-1.5 -top-1 h-8 w-8"
+                  x-html="$inkBlot()"
+                ></div>
                 <div class="min-w-0 flex-1">
                   <p class="font-semibold tabular-nums text-ink" x-text="$store.sl.money(s.amount)"></p>
                   <p class="truncate text-xs font-light text-ink-2">

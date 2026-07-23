@@ -84,7 +84,7 @@ import Layout from '../layouts/Layout.astro';
               </p>
               <button
                 type="button"
-                @click="$store.sl.completeGoal(g.id); $toast('Saved')"
+                @click="$store.sl.completeGoal(g.id); $toast('Saved'); $haptic.success()"
                 class="pressable mt-3 min-h-11 w-full rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"
               >
                 Mark done
@@ -362,7 +362,8 @@ import Layout from '../layouts/Layout.astro';
 
             <template x-if="depStage === 'done'">
               <div class="py-4 text-center">
-                <p class="font-display text-2xl font-semibold text-ochre-deep">Deposit confirmed</p>
+                <div class="animate-stamp-in mx-auto h-24 w-24" x-html="$depositStamp()"></div>
+                <p class="mt-2 font-display text-2xl font-semibold text-ochre-deep">Deposit confirmed</p>
                 <p class="mt-2 text-sm font-light text-ink-2" x-text="'Added to “' + depositGoal.name + '”.'"></p>
                 <button
                   type="button"

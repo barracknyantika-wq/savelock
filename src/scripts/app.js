@@ -1,6 +1,6 @@
 import Alpine from 'alpinejs';
 import { registerStore, parseAmount, todayStr, BADGE_DEFS } from './store.js';
-import { tickGauge, sketchBars, categoryBars, squiggle, handCheck } from './viz.js';
+import { tickGauge, sketchBars, categoryBars, squiggle, handCheck, inkBlot, depositStamp, streakSprout } from './viz.js';
 import {
   isNative,
   initNativeBridge,
@@ -12,6 +12,9 @@ import {
   nativeReload,
   syncReminders,
   syncWeeklySummary,
+  hapticTap,
+  hapticSuccess,
+  hapticCelebrate,
 } from './native-bridge.js';
 import {
   isCloudConfigured,
@@ -43,6 +46,15 @@ const store = () => Alpine.store('sl');
 Alpine.magic('squiggle', () => squiggle);
 Alpine.magic('handCheck', () => handCheck);
 Alpine.magic('gauge', () => (ratio, opts) => tickGauge(ratio, opts));
+Alpine.magic('inkBlot', () => inkBlot);
+Alpine.magic('depositStamp', () => depositStamp);
+Alpine.magic('streakSprout', () => streakSprout);
+
+// Capacitor Haptics, available inline in templates the same way $toast is —
+// a no-op on non-native builds, same convention as everything native-bridge
+// exports. Three tiers: tap for routine actions, success for milestone-style
+// moments, celebrate reserved for a real M-Pesa deposit actually clearing.
+Alpine.magic('haptic', () => ({ tap: hapticTap, success: hapticSuccess, celebrate: hapticCelebrate }));
 
 // A single global toast, shared by every page (rendered once in Layout.astro)
 // so any edit — a spend, a goal, a setting — gets the same immediate,
@@ -158,11 +170,12 @@ Alpine.data('todayPage', () => ({
     const milestone = milestoneText(res.milestones, res.goal.name);
     this.confirmBanner = `${store().money(spend.amount)} moved to savings, added to your goal, not counted as spending.${milestone ? ' ' + milestone : ''}`;
     setTimeout(() => (this.confirmBanner = ''), 5000);
+    if (milestone) hapticSuccess();
   },
 
   logQuick(v) {
     store().logSpend(v);
-    if (navigator.vibrate) navigator.vibrate(15);
+    hapticTap();
     toast('Logged');
   },
 
@@ -170,6 +183,7 @@ Alpine.data('todayPage', () => ({
     const v = parseAmount(this.amount);
     if (!v) return;
     store().logSpend(v, this.note.trim(), this.category);
+    hapticTap();
     this.amount = '';
     this.note = '';
     this.category = 'Other';
@@ -307,6 +321,7 @@ Alpine.data('goalsPage', () => ({
     if (text) {
       this.milestoneBanner = text;
       setTimeout(() => (this.milestoneBanner = ''), 5000);
+      hapticSuccess();
     }
     toast('Updated');
   },
@@ -340,6 +355,7 @@ Alpine.data('goalsPage', () => ({
     if (text) {
       this.milestoneBanner = text;
       setTimeout(() => (this.milestoneBanner = ''), 5000);
+      hapticSuccess();
     }
   },
 
@@ -385,6 +401,13 @@ Alpine.data('goalsPage', () => ({
       if (row.status === 'completed') {
         await this.applyConfirmedGoalAmount(goalId);
         this.depStage = 'done';
+        // A real M-Pesa deposit actually clearing is a bigger moment than
+        // an ordinary milestone, hence the stronger two-part pulse here
+        // rather than the plain hapticSuccess() a milestone alone gets
+        // (applyConfirmedGoalAmount above already fires that too, if this
+        // deposit also happened to cross one — both firing together for a
+        // deposit that both clears and crosses a milestone is intentional).
+        hapticCelebrate();
       } else if (row.status === 'failed') {
         this.depStage = 'failed';
         this.depError = row.result_desc || 'The deposit did not go through.';
@@ -439,6 +462,7 @@ Alpine.data('goalsPage', () => ({
       if (row.status === 'completed') {
         await this.applyConfirmedGoalAmount(goalId);
         this.wdStage = 'done';
+        hapticSuccess();
       } else if (row.status === 'failed') {
         this.wdStage = 'failed';
         this.wdError = row.result_desc || 'The withdrawal did not go through.';

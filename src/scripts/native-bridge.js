@@ -7,10 +7,49 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import { LocalNotifications, Weekday } from '@capacitor/local-notifications';
+import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 
 const SmsMpesa = registerPlugin('SmsMpesa');
 
 export const isNative = () => Capacitor.isNativePlatform();
+
+// ---- haptics --------------------------------------------------------------
+// A no-op everywhere but a native build, same convention as every other
+// bridge function here. Three tiers, not one blanket vibrate: a light tap
+// for routine actions (logging a spend), a notification-success pulse for
+// milestone-style moments, and a stronger two-part pulse reserved for a
+// real M-Pesa deposit actually clearing — that's a bigger moment than a UI
+// update, and it should feel like one.
+
+export async function hapticTap() {
+  if (!isNative()) return;
+  try {
+    await Haptics.impact({ style: ImpactStyle.Light });
+  } catch {
+    /* no haptics hardware, or the plugin isn't ready — never block on this */
+  }
+}
+
+export async function hapticSuccess() {
+  if (!isNative()) return;
+  try {
+    await Haptics.notification({ type: NotificationType.Success });
+  } catch {
+    /* see hapticTap */
+  }
+}
+
+export async function hapticCelebrate() {
+  if (!isNative()) return;
+  try {
+    await Haptics.impact({ style: ImpactStyle.Heavy });
+    setTimeout(() => {
+      Haptics.notification({ type: NotificationType.Success }).catch(() => {});
+    }, 90);
+  } catch {
+    /* see hapticTap */
+  }
+}
 
 function pushBudget(store) {
   if (!isNative()) return;

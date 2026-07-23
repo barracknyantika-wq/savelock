@@ -7,7 +7,8 @@
     "dev": "astro dev",
     "build": "node scripts/generate-icons.mjs && astro build && node scripts/generate-sw.mjs",
     "preview": "astro preview",
-    "test": "node scripts/test-mpesa-parser.mjs"
+    "test": "node scripts/test-mpesa-parser.mjs",
+    "test:e2e": "node scripts/test-feedback-animations.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",
@@ -15,6 +16,7 @@
     "@capacitor/browser": "^8.0.4",
     "@capacitor/cli": "^8.4.2",
     "@capacitor/core": "^8.4.2",
+    "@capacitor/haptics": "^8.0.2",
     "@capacitor/local-notifications": "^8.2.1",
     "@fontsource-variable/fraunces": "^5.2.9",
     "@fontsource-variable/outfit": "^5.2.8",
@@ -25,6 +27,7 @@
     "tailwindcss": "^4.1.0"
   },
   "devDependencies": {
+    "playwright": "^1.61.1",
     "sharp": "^0.35.3"
   }
 }

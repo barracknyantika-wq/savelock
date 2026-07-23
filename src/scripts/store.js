@@ -144,12 +144,28 @@ export function registerStore(Alpine) {
   Alpine.store('sl', {
     ...load(),
 
+    // Ephemeral UI cue only, deliberately not part of load()/persist(): which
+    // spend (if any) should show its just-logged ink-blot animation right
+    // now. Set by logSpend() and recordNativeTransaction() alike, so manual
+    // and SMS-detected spends get the same brief flourish, and cleared on
+    // its own a moment later rather than needing a caller to remember to.
+    lastSpendId: null,
+    _flashTimer: null,
+
     init() {
       this.rollover();
       this.scheduleMidnight();
       document.addEventListener('visibilitychange', () => {
         if (!document.hidden) this.rollover();
       });
+    },
+
+    flashSpend(id) {
+      this.lastSpendId = id;
+      clearTimeout(this._flashTimer);
+      this._flashTimer = setTimeout(() => {
+        this.lastSpendId = null;
+      }, 900);
     },
 
     persist() {
@@ -360,8 +376,11 @@ export function registerStore(Alpine) {
 
     logSpend(amount, note = '', category = 'Other') {
       this.rollover();
-      this.day.spends.push({ id: uid(), amount, note, category, at: Date.now() });
+      const spend = { id: uid(), amount, note, category, at: Date.now() };
+      this.day.spends.push(spend);
+      this.flashSpend(spend.id);
       this.persist();
+      return spend;
     },
 
     deleteSpend(id) {
@@ -559,6 +578,7 @@ export function registerStore(Alpine) {
       const txDate = todayStr(new Date(receivedAt));
       if (txDate === this.day.date) {
         this.day.spends.push(record);
+        this.flashSpend(record.id);
       } else if (txDate < this.day.date) {
         this.spendLog.push(record);
         if (this.spendLog.length > SPEND_LOG_CAP) {
@@ -576,6 +596,7 @@ export function registerStore(Alpine) {
         // Clock skew: the SMS timestamp is somehow after today. Treat it as
         // today's rather than inventing a future day.
         this.day.spends.push(record);
+        this.flashSpend(record.id);
       }
       this.persist();
       return record;

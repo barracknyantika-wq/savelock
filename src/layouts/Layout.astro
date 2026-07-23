@@ -56,10 +56,12 @@ const tabs = [
 
         <template x-if="$store.auth.stage === 'phone' || $store.auth.stage === 'otp'">
           <div class="pt-8">
-            <h1 class="mb-1 px-1 font-display text-2xl font-semibold tracking-tight text-cream">SaveLock</h1>
+            <h1 class="mb-1 px-1 font-display text-2xl font-semibold tracking-tight text-cream">Welcome to SaveLock</h1>
             <p class="mb-7 px-1 text-sm font-light leading-relaxed text-cream-2">
-              An account keeps your allowance, goals, and streak safe if you switch phones or reinstall.
-              This app still holds no money, signing in only lets your own tracking data follow you.
+              New here? Enter your details below to get started. Already have an account? Sign in the
+              same way, and everything you tracked before comes right back. This app still holds no
+              money either way, an account only keeps your own tracking data safe if you switch phones
+              or reinstall.
             </p>
 
             <template x-if="$store.auth.stage === 'phone'">
