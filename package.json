@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "astro dev",
     "build": "node scripts/generate-icons.mjs && astro build && node scripts/generate-sw.mjs",
-    "preview": "astro preview"
+    "preview": "astro preview",
+    "test": "node scripts/test-mpesa-parser.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",

@@ -31,6 +31,14 @@ object MpesaParser {
     private val BALANCE_RE =
         Regex("(?:new\\s+)?m-pesa balance is ksh\\s?([\\d,]+(?:\\.\\d{2})?)", RegexOption.IGNORE_CASE)
 
+    // Matches a domestic (0722123456) or international (254722123456) phone
+    // number, with any digit possibly replaced by "*" per Safaricom's March
+    // 2026 masking feature ("0705***734", "0722*000**"). Always wrapped in
+    // an optional, non-capturing group below, never required: real messages
+    // exist both with and without this segment ("sent to douglas moseti on
+    // 23/7/26...", no number at all).
+    private const val PHONE_OR_MASKED_RE = "(?:0[\\d*]{6,12}|[\\d*]{9,12})"
+
     // Fuliza (M-Pesa's overdraft) messages don't fit the plain "X paid to Y"
     // shape. A Fuliza-covered purchase rides on a normal Confirmed
     // transaction message (still parsed by RULES below) but adds a
@@ -149,7 +157,7 @@ object MpesaParser {
 
     private val RULES = listOf(
         Rule("received", "receive") { body ->
-            Regex("received\\s+ksh[\\d,.]+\\s+from\\s+(.+?)\\s+(?:0\\d{6,12}|\\d{9,12})\\s+on\\s", RegexOption.IGNORE_CASE)
+            Regex("received\\s+ksh[\\d,.]+\\s+from\\s+(.+?)\\s+(?:$PHONE_OR_MASKED_RE\\s+)?on\\s", RegexOption.IGNORE_CASE)
                 .find(body)?.groupValues?.get(1)?.let(::clean)
         },
         Rule("spend", "paybill") { body ->
@@ -157,7 +165,7 @@ object MpesaParser {
                 .find(body)?.groupValues?.get(1)?.let(::clean)
         },
         Rule("spend", "send") { body ->
-            Regex("sent\\s+to\\s+(.+?)\\s+(?:0\\d{6,12}|\\d{9,12})\\s+on\\s", RegexOption.IGNORE_CASE)
+            Regex("sent\\s+to\\s+(.+?)\\s+(?:$PHONE_OR_MASKED_RE\\s+)?on\\s", RegexOption.IGNORE_CASE)
                 .find(body)?.groupValues?.get(1)?.let(::clean)
         },
         Rule("spend", "till") { body ->

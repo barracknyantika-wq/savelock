@@ -9,12 +9,26 @@
 // ("TJB2K3L4M5 Confirmed. ...") — that code is the dedup key everywhere
 // in this app, native and web alike, so the same SMS can never be logged
 // twice even if the OS redelivers the broadcast.
+//
+// The phone number after a recipient/sender's name in "sent to"/"received
+// from" messages is NOT reliable to require: Safaricom's March 2026
+// number-masking rollout replaces some digits with "*" for privacy
+// ("0705***734"), and some real messages omit the number entirely
+// ("sent to douglas moseti on 23/7/26...", no number at all). Both are
+// handled by PHONE_OR_MASKED_RE below being optional and tolerant of "*".
 
 export const MPESA_SENDER_IDS = ['MPESA'];
 
 const CODE_RE = /\b([A-Z][A-Z0-9]{8,11})\b\s+Confirmed/;
 const AMOUNT_RE = /Ksh\s?([\d,]+(?:\.\d{2})?)/i;
 const BALANCE_RE = /(?:new\s+)?m-pesa balance is ksh\s?([\d,]+(?:\.\d{2})?)/i;
+
+// Matches a domestic (0722123456) or international (254722123456) phone
+// number, with any digit possibly replaced by "*" per Safaricom's masking
+// feature ("0705***734", "0722*000**"). Always wrapped in an optional,
+// non-capturing group by callers, never required, since real messages
+// exist both with and without this segment.
+const PHONE_OR_MASKED_RE = '(?:0[\\d*]{6,12}|[\\d*]{9,12})';
 
 // Fuliza (M-Pesa's overdraft) messages don't fit the plain "X paid to Y"
 // shape. A Fuliza-covered purchase rides on a normal Confirmed transaction
@@ -96,12 +110,14 @@ function clean(name) {
 
 // Each rule: [type, subtype, matcher]. Matcher returns the counterparty
 // string, or null if this rule doesn't apply. Tried in order; first hit wins.
+const RECEIVED_RE = new RegExp(`received\\s+ksh[\\d,.]+\\s+from\\s+(.+?)\\s+(?:${PHONE_OR_MASKED_RE}\\s+)?on\\s`, 'i');
+const SEND_RE = new RegExp(`sent\\s+to\\s+(.+?)\\s+(?:${PHONE_OR_MASKED_RE}\\s+)?on\\s`, 'i');
 const RULES = [
   [
     'received',
     'receive',
     (body) => {
-      const m = body.match(/received\s+ksh[\d,.]+\s+from\s+(.+?)\s+(?:0\d{6,12}|\d{9,12})\s+on\s/i);
+      const m = body.match(RECEIVED_RE);
       return m ? clean(m[1]) : null;
     },
   ],
@@ -117,7 +133,7 @@ const RULES = [
     'spend',
     'send',
     (body) => {
-      const m = body.match(/sent\s+to\s+(.+?)\s+(?:0\d{6,12}|\d{9,12})\s+on\s/i);
+      const m = body.match(SEND_RE);
       return m ? clean(m[1]) : null;
     },
   ],
