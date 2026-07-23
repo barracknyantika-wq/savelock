@@ -79,9 +79,22 @@ function defaultState() {
       // always-on auto-detect above didn't miss anything. Never enabled
       // without the user explicitly turning it on in Settings.
       deepReconciliationEnabled: false,
+      // Temporary, developer only: which visual treatment the streak cards
+      // use, 'hand' (sketched, extends the existing sprout) or 'fire' (a
+      // bright gamified card built around public/fire-streak.svg), so both
+      // can be compared on the same device before picking one. Remove this
+      // setting once a direction is chosen, it is not meant to ship.
+      streakTreatment: 'hand',
     },
     day: { date: todayStr(), spends: [] },
     streak: { count: 0 },
+    // Consecutive calendar days with any recorded savings progress (a
+    // confirmed M-Pesa deposit or a manual "update saved" entry) toward at
+    // least one goal — same rollover/break-on-miss shape as streak above,
+    // judged independently of whether a daily spending limit even exists.
+    // lastProgressDate is the internal marker rollover() checks each closed
+    // day against, not meant for direct display.
+    savingsStreak: { count: 0, lastProgressDate: null },
     history: [],
     // Flat, capped log of every past (already-rolled-over) day's spends,
     // category intact — day.spends only holds *today's* still-editable
@@ -103,7 +116,7 @@ function defaultState() {
     fulizaEvents: [],
     // ---- engagement: badges + optional weekly challenge ----------------
     badges: [],
-    stats: { longestStreak: 0, biggestSingleDaySave: 0, biggestSingleDaySaveDate: null },
+    stats: { longestStreak: 0, longestSavingsStreak: 0, biggestSingleDaySave: 0, biggestSingleDaySaveDate: null },
     // Opt-in only, never auto-started and never auto-renewed. null when no
     // challenge is running.
     challenge: null,
@@ -123,6 +136,7 @@ function load() {
       settings: { ...base.settings, ...(saved.settings || {}) },
       day: saved.day && saved.day.date ? saved.day : base.day,
       streak: { ...base.streak, ...(saved.streak || {}) },
+      savingsStreak: { ...base.savingsStreak, ...(saved.savingsStreak || {}) },
       history: Array.isArray(saved.history) ? saved.history : [],
       spendLog: Array.isArray(saved.spendLog) ? saved.spendLog : [],
       goals: Array.isArray(saved.goals) ? saved.goals : [],
@@ -170,13 +184,13 @@ export function registerStore(Alpine) {
 
     persist() {
       const {
-        version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes,
+        version, settings, day, streak, savingsStreak, history, spendLog, goals, breaks, processedMpesaCodes,
         fulizaEvents, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
       } = this;
       localStorage.setItem(
         KEY,
         JSON.stringify({
-          version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes,
+          version, settings, day, streak, savingsStreak, history, spendLog, goals, breaks, processedMpesaCodes,
           fulizaEvents, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
         })
       );
@@ -221,6 +235,18 @@ export function registerStore(Alpine) {
             this.history = this.history.slice(-HISTORY_CAP);
           }
           this.recordClosedDayStats(limit, spent);
+        }
+        // Savings streak judged independently of whether a daily limit
+        // exists at all — it's about saving progress, not budget adherence.
+        this.savingsStreak.count = this.savingsStreak.lastProgressDate === date ? this.savingsStreak.count + 1 : 0;
+        if (this.savingsStreak.count > this.stats.longestSavingsStreak) {
+          this.stats.longestSavingsStreak = this.savingsStreak.count;
+        }
+        for (const g of this.goals) {
+          if (g.status !== 'active') continue;
+          if (!g.streak) g.streak = { count: 0, longest: 0, lastProgressDate: null };
+          g.streak.count = g.streak.lastProgressDate === date ? g.streak.count + 1 : 0;
+          if (g.streak.count > g.streak.longest) g.streak.longest = g.streak.count;
         }
         date = addDays(date, 1);
         spends = [];
@@ -424,6 +450,13 @@ export function registerStore(Alpine) {
 
     setWeeklySummary(enabled) {
       this.settings.weeklySummaryEnabled = !!enabled;
+      this.persist();
+    },
+
+    // Temporary, developer only toggle, see the comment on the setting
+    // itself in defaultState() above.
+    setStreakTreatment(v) {
+      this.settings.streakTreatment = v === 'fire' ? 'fire' : 'hand';
       this.persist();
     },
 
@@ -646,6 +679,11 @@ export function registerStore(Alpine) {
         status: 'active',
         milestonesHit: [],
         savedHistory: [{ at: new Date().toISOString(), amount: 0 }],
+        // Consecutive periods (daily, this goal has no cadence of its own
+        // the way a group challenge does) where this specific goal
+        // received progress. Same rollover/break-on-miss shape as the
+        // top-level streaks, judged per goal in rollover().
+        streak: { count: 0, longest: 0, lastProgressDate: null },
       });
       this.persist();
     },
@@ -669,12 +707,32 @@ export function registerStore(Alpine) {
       return newly;
     },
 
+    // Marks today as a day the savings streak (and this goal's own streak)
+    // received progress. Called only when a goal's saved total actually
+    // increased — a correction typed downward, or a withdrawal flowing
+    // through the same updateSaved() call, is not progress, and simply not
+    // marking the date here is what lets rollover() break the streak on
+    // that kind of day exactly like a missed one.
+    markSavingsStreakProgress(goal) {
+      this.savingsStreak.lastProgressDate = todayStr();
+      if (!goal.streak) goal.streak = { count: 0, longest: 0, lastProgressDate: null };
+      goal.streak.lastProgressDate = todayStr();
+    },
+
     // Sets the saved total directly (the user telling us what's actually in
-    // the real lock right now) rather than adding an increment.
+    // the real lock right now) rather than adding an increment. This is
+    // also the one place a confirmed M-Pesa deposit or withdrawal lands
+    // locally (applyConfirmedGoalAmount in app.js calls this with the
+    // server's authoritative saved total after either completes), so it is
+    // the single choke point both of this feature's two progress sources
+    // — a manual entry and a confirmed deposit — actually flow through.
     updateSaved(id, amount) {
+      this.rollover();
       const g = this.goals.find((x) => x.id === id);
       if (!g) return [];
+      const previousSaved = g.saved;
       g.saved = amount;
+      if (amount > previousSaved) this.markSavingsStreakProgress(g);
       const milestones = this.recordSavedProgress(g);
       this.persist();
       return milestones;
@@ -760,7 +818,7 @@ export function registerStore(Alpine) {
 
     exportData() {
       const {
-        version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes,
+        version, settings, day, streak, savingsStreak, history, spendLog, goals, breaks, processedMpesaCodes,
         fulizaEvents, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
       } = this;
       return JSON.stringify(
@@ -769,7 +827,7 @@ export function registerStore(Alpine) {
           version,
           exportedAt: new Date().toISOString(),
           data: {
-            version, settings, day, streak, history, spendLog, goals, breaks, processedMpesaCodes,
+            version, settings, day, streak, savingsStreak, history, spendLog, goals, breaks, processedMpesaCodes,
             fulizaEvents, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
           },
         },

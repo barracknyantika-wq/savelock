@@ -9,7 +9,9 @@
     "preview": "astro preview",
     "test": "node scripts/test-mpesa-parser.mjs",
     "test:e2e": "node scripts/test-feedback-animations.mjs",
-    "test:db": "node scripts/test-group-challenges-db.mjs"
+    "test:db": "node scripts/test-group-challenges-db.mjs",
+    "test:streaks": "node scripts/test-streaks.mjs",
+    "test:tour": "node scripts/test-onboarding-tour.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",

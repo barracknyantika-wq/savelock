@@ -84,7 +84,17 @@ function parseTime(hhmm) {
   return { hour: Number.isFinite(h) ? h : 8, minute: Number.isFinite(m) ? m : 0 };
 }
 
-async function ensureLocalNotifPermission() {
+// Exported (this used to be an internal helper only reached as a side
+// effect of scheduling a reminder, both call sites below already guarded
+// by isNative()) so the onboarding tour can trigger this exact same prompt
+// directly, at the moment it explains reminders, rather than only ever
+// firing later as a side effect of someone first turning a reminder on in
+// Settings. Guards itself now that it's reachable from outside this file —
+// @capacitor/local-notifications ships a real web fallback that would
+// otherwise ask a plain browser sign in for a permission this app has no
+// native shell to ever act on.
+export async function requestNotificationPermission() {
+  if (!isNative()) return false;
   try {
     const state = await LocalNotifications.checkPermissions();
     if (state.display === 'granted') return true;
@@ -109,7 +119,7 @@ export async function syncReminders(store) {
   }
   const { reminderMorningEnabled, reminderEveningEnabled } = store.settings;
   if (!reminderMorningEnabled && !reminderEveningEnabled) return;
-  if (!(await ensureLocalNotifPermission())) return;
+  if (!(await requestNotificationPermission())) return;
 
   const notifications = [];
   if (reminderMorningEnabled) {
@@ -149,7 +159,7 @@ export async function syncWeeklySummary(store) {
     /* nothing was scheduled yet */
   }
   if (!store.settings.weeklySummaryEnabled) return;
-  if (!(await ensureLocalNotifPermission())) return;
+  if (!(await requestNotificationPermission())) return;
 
   const spentThisWeek = store.categoryBreakdown(7).reduce((s, c) => s + c.total, 0);
   const daysUnderBudget = store.last7.filter((d) => d.limit > 0 && d.spent <= d.limit).length;

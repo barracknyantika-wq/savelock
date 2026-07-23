@@ -1,5 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
+const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
 ---
 
 <Layout title="SaveLock: Today" tab="today">
@@ -136,6 +137,55 @@ import Layout from '../layouts/Layout.astro';
             </div>
           </div>
         </section>
+
+        <!-- Streak cards: bigger, more central treatment of the budget and
+             savings streaks, comparing two visual directions while one is
+             chosen (see settings for the developer only toggle). The small
+             sprout above stays exactly as it was, this is additional, not a
+             replacement of it. -->
+        <div class="mt-4 grid grid-cols-2 gap-3">
+          <template x-if="$store.sl.settings.streakTreatment === 'hand'">
+            <section class="paper relative z-0 rotate-[-0.5deg] p-4 text-center">
+              <h2 class="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-3">Budget streak</h2>
+              <div class="mx-auto -mt-1 w-32" x-html="$streakScene($store.sl.streak.count)"></div>
+              <p class="-mt-2 text-sm font-medium" :class="$store.sl.streak.count > 0 ? 'text-ochre-deep' : 'text-ink-3'">
+                <span x-text="$store.sl.streak.count"></span>
+                <span x-text="$store.sl.streak.count === 1 ? ' day under budget' : ' days under budget'"></span>
+              </p>
+            </section>
+          </template>
+          <template x-if="$store.sl.settings.streakTreatment === 'fire'">
+            <section
+              class="relative overflow-hidden rounded-3xl p-4 text-center shadow-[0_10px_26px_-10px_rgba(0,0,0,0.55)]"
+              style="background: linear-gradient(135deg, #ff8a3d 0%, #ff3d68 55%, #7c3aed 100%)"
+            >
+              <img src={`${base}/fire-streak.svg`} alt="" aria-hidden="true" class="mx-auto h-12 w-12" />
+              <p class="mt-0.5 font-display text-4xl font-extrabold leading-none text-white" x-text="$store.sl.streak.count"></p>
+              <p class="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-white/85">Budget streak</p>
+            </section>
+          </template>
+
+          <template x-if="$store.sl.settings.streakTreatment === 'hand'">
+            <section class="paper relative z-0 rotate-[0.5deg] p-4 text-center">
+              <h2 class="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-3">Savings streak</h2>
+              <div class="mx-auto -mt-1 w-32" x-html="$streakScene($store.sl.savingsStreak.count)"></div>
+              <p class="-mt-2 text-sm font-medium" :class="$store.sl.savingsStreak.count > 0 ? 'text-ochre-deep' : 'text-ink-3'">
+                <span x-text="$store.sl.savingsStreak.count"></span>
+                <span x-text="$store.sl.savingsStreak.count === 1 ? ' day saving toward a goal' : ' days saving toward a goal'"></span>
+              </p>
+            </section>
+          </template>
+          <template x-if="$store.sl.settings.streakTreatment === 'fire'">
+            <section
+              class="relative overflow-hidden rounded-3xl p-4 text-center shadow-[0_10px_26px_-10px_rgba(0,0,0,0.55)]"
+              style="background: linear-gradient(135deg, #ff8a3d 0%, #ff3d68 55%, #7c3aed 100%)"
+            >
+              <img src={`${base}/fire-streak.svg`} alt="" aria-hidden="true" class="mx-auto h-12 w-12" />
+              <p class="mt-0.5 font-display text-4xl font-extrabold leading-none text-white" x-text="$store.sl.savingsStreak.count"></p>
+              <p class="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-white/85">Savings streak</p>
+            </section>
+          </template>
+        </div>
 
         <!-- Log a spend: overlaps the hero's bottom edge, offset right -->
         <section class="paper relative z-20 -mt-3 ml-4 rotate-[0.8deg] p-5">

@@ -1,6 +1,6 @@
 import Alpine from 'alpinejs';
 import { registerStore, parseAmount, todayStr, BADGE_DEFS } from './store.js';
-import { tickGauge, sketchBars, categoryBars, squiggle, handCheck, inkBlot, depositStamp, streakSprout } from './viz.js';
+import { tickGauge, sketchBars, categoryBars, squiggle, handCheck, inkBlot, depositStamp, streakSprout, streakScene } from './viz.js';
 import {
   isNative,
   initNativeBridge,
@@ -8,6 +8,7 @@ import {
   checkSmsPermission,
   requestSmsPermission,
   requestReadSmsPermission,
+  requestNotificationPermission,
   reconcileInbox,
   nativeReload,
   syncReminders,
@@ -41,6 +42,8 @@ import {
   fetchMyGroupChallenges,
   fetchGroupChallengeDetail,
   subscribeToChallenge,
+  getTourSeen,
+  markTourSeen,
 } from './cloud-sync.js';
 
 window.Alpine = Alpine;
@@ -55,6 +58,7 @@ Alpine.magic('gauge', () => (ratio, opts) => tickGauge(ratio, opts));
 Alpine.magic('inkBlot', () => inkBlot);
 Alpine.magic('depositStamp', () => depositStamp);
 Alpine.magic('streakSprout', () => streakSprout);
+Alpine.magic('streakScene', () => streakScene);
 
 // Capacitor Haptics, available inline in templates the same way $toast is —
 // a no-op on non-native builds, same convention as everything native-bridge
@@ -881,6 +885,13 @@ Alpine.store('auth', {
   error: '',
   busy: false,
 
+  // True right after the very first successful sign in for a brand new
+  // account, resolved once alongside the reconcile() checks below and
+  // read by the tour store's own onboarding overlay. Only ever meaningful
+  // once stage reaches 'ready' — see the tour overlay's own x-show in
+  // Layout.astro, which waits for that too.
+  showTour: false,
+
   // True whenever the app must show only the sign-in gate: cloud sync is
   // configured (so an account is possible at all) and we have not yet
   // reached a fully resolved, signed-in state. Local-only builds
@@ -1008,7 +1019,12 @@ Alpine.store('auth', {
 
   async reconcile() {
     const userId = this.session.user.id;
-    const remoteHasData = await hasRemoteData(userId);
+    // Fetched alongside the existing checks below, purely additive — this
+    // does not change anything about how remoteHasData/localData decide
+    // which stage to land on, only sets showTour for the tour overlay to
+    // read once that stage settles on 'ready'.
+    const [remoteHasData, tourAlreadySeen] = await Promise.all([hasRemoteData(userId), getTourSeen(userId)]);
+    this.showTour = !tourAlreadySeen;
     const localData = this.localHasData();
     if (remoteHasData && localData) {
       this.stage = 'reconcile';
@@ -1021,6 +1037,15 @@ Alpine.store('auth', {
     } else {
       this.stage = 'ready';
     }
+  },
+
+  // Called once the tour is actually completed or skipped (see
+  // Alpine.store('tour') below), never just from being shown — closing the
+  // app mid tour leaves tour_seen false, so it picks back up on the next
+  // sign in rather than being lost half finished.
+  async finishTour() {
+    this.showTour = false;
+    if (this.session) await markTourSeen(this.session.user.id);
   },
 
   async pullNow() {
@@ -1063,6 +1088,41 @@ Alpine.store('auth', {
     this.phone = '';
     this.otp = '';
     toast('Signed out');
+  },
+});
+
+// One time onboarding tour: the developer letter, then a short screen for
+// each real tab in order. Whether to show this at all lives on the auth
+// store above (showTour, resolved once alongside reconcile()); this store
+// only handles moving through the steps once it is showing, and the two
+// permission prompts tied to specific steps below. See Layout.astro for
+// the overlay itself.
+const TOUR_STEPS = ['letter', 'today', 'goals', 'report', 'settings', 'groups'];
+
+Alpine.store('tour', {
+  step: 0,
+
+  get current() {
+    return TOUR_STEPS[this.step];
+  },
+
+  // Triggered automatically the instant each step is reached, not behind a
+  // separate button the user has to go find later. Denied or granted, the
+  // tour continues normally either way — neither call here is awaited by
+  // anything that could block on it.
+  next() {
+    this.step++;
+    if (this.current === 'today') requestSmsPermission().catch(() => {});
+    if (this.current === 'settings') requestNotificationPermission().catch(() => {});
+  },
+
+  skip() {
+    this.finish();
+  },
+
+  async finish() {
+    this.step = 0;
+    await Alpine.store('auth').finishTour();
   },
 });
 

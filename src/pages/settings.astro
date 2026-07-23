@@ -403,6 +403,35 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
         </p>
       </section>
 
+      <!-- Streak card style: TEMPORARY developer only comparison toggle,
+           meant to be removed once a direction is chosen, not a permanent
+           setting. -->
+      <section class="paper rotate-[0.3deg] p-5" style="border: 2px dashed rgba(180,69,47,0.4)">
+        <h2 class="font-display text-lg font-semibold text-ink">Streak card style</h2>
+        <p class="mt-1 text-sm font-light leading-relaxed text-ink-2">
+          Developer setting for comparing two looks while one is chosen. Remove this before
+          shipping.
+        </p>
+        <div class="mt-3 flex gap-1 rounded-full bg-paper-deep p-0.5">
+          <button
+            type="button"
+            @click="$store.sl.setStreakTreatment('hand')"
+            class="pressable min-h-10 flex-1 rounded-full text-sm font-semibold"
+            :class="$store.sl.settings.streakTreatment === 'hand' ? 'bg-paper text-ink shadow-sm' : 'text-ink-3'"
+          >
+            Sketched
+          </button>
+          <button
+            type="button"
+            @click="$store.sl.setStreakTreatment('fire')"
+            class="pressable min-h-10 flex-1 rounded-full text-sm font-semibold"
+            :class="$store.sl.settings.streakTreatment === 'fire' ? 'bg-paper text-ink shadow-sm' : 'text-ink-3'"
+          >
+            Gamified
+          </button>
+        </div>
+      </section>
+
       <!-- Erase -->
       <section class="paper ml-2 rotate-[0.4deg] p-5">
         <h2 class="font-display text-lg font-semibold text-ink">Start over</h2>
