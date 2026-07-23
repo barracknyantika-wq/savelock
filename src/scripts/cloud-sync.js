@@ -486,6 +486,38 @@ export async function isAccountOwner() {
   return !!data?.is_owner;
 }
 
+// ---- one time onboarding tour flag (account level, not local storage) -----
+//
+// A flag kept in localStorage would reappear the moment the same account
+// signed in on a second device, or after a reinstall — the whole point of
+// this being account level, see migration 0008_onboarding_tour.sql. Every
+// profile row that already existed before that migration was backfilled to
+// true there, so a false read here can only mean a genuinely brand new
+// account, never a returning one.
+
+export async function getTourSeen(userId) {
+  const c = client();
+  // No account at all (local-only build) means no account-level concept of
+  // "seen" either — never show an account-tied tour without an account.
+  if (!c) return true;
+  const { data, error } = await c.from('profiles').select('tour_seen').eq('id', userId).maybeSingle();
+  // Fail safe toward not interrupting someone with a tour if this couldn't
+  // be determined, rather than risking it reappearing on every retry.
+  if (error || !data) return true;
+  return !!data.tour_seen;
+}
+
+export async function markTourSeen(userId) {
+  const c = client();
+  if (!c) return;
+  try {
+    await c.from('profiles').update({ tour_seen: true }).eq('id', userId);
+  } catch {
+    // Best effort — if this fails, the tour may show once more on a later
+    // sign in, not worth blocking anything over.
+  }
+}
+
 // The ledger-derived balance used to enable/disable the Withdraw button and
 // show "available" in its sheet. This is read-only display, the real
 // enforcement of this same number happens again, authoritatively, inside

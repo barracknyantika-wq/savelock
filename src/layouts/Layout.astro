@@ -222,6 +222,147 @@ const tabs = [
       </div>
     </div>
 
+    <!--
+      One time onboarding tour: the developer letter, then a short screen
+      for each real tab in order (Today, Goals, Report, Settings, Groups).
+      Shown exactly once, right after the very first successful sign in
+      for a brand new account — see reconcile() and Alpine.store('tour')
+      in app.js, and migration 0008_onboarding_tour.sql for the account
+      level flag that makes this durable across devices and reinstalls.
+      Skippable at any point; either way it always lands on the normal
+      signed in page underneath once closed.
+    -->
+    <div
+      x-data
+      x-show="$store.auth.stage === 'ready' && $store.auth.showTour"
+      x-cloak
+      class="fixed inset-0 z-[65] overflow-y-auto bg-canvas px-5 py-10"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Welcome to SaveLock"
+    >
+      <div class="mx-auto flex min-h-full w-full max-w-md flex-col">
+        <div class="flex justify-end">
+          <button type="button" @click="$store.tour.skip()" class="pressable min-h-11 rounded-full px-3 text-sm font-medium text-cream-2">
+            Skip
+          </button>
+        </div>
+
+        <div class="flex flex-1 flex-col justify-center pb-16">
+          <template x-if="$store.tour.current === 'letter'">
+            <section class="paper relative rotate-[-0.5deg] p-6">
+              <h1 class="font-display text-xl font-semibold tracking-tight text-ink">A note from the developer</h1>
+              <p class="mt-4 text-base font-light leading-relaxed text-ink-2">
+                Thank you for downloading SaveLock. Welcome, and I would love to hear your reviews and
+                criticism.
+              </p>
+              <p class="mt-4 text-base font-light leading-relaxed text-ink-2">Barrack</p>
+              <button
+                type="button"
+                @click="$store.tour.next()"
+                class="pressable mt-6 min-h-12 w-full rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"
+              >
+                Continue
+              </button>
+            </section>
+          </template>
+
+          <template x-if="$store.tour.current === 'today'">
+            <section class="paper relative rotate-[0.4deg] p-6">
+              <h1 class="font-display text-xl font-semibold tracking-tight text-ink">Today</h1>
+              <p class="mt-3 text-sm font-light leading-relaxed text-ink-2">
+                Set a daily allowance, then watch what is left as you spend. Log something yourself in
+                a tap, or let SaveLock catch it the moment an M Pesa message arrives.
+              </p>
+              <p class="mt-3 text-sm font-light leading-relaxed text-ink-2">
+                That needs permission to read SMS messages on this device, so a spend can be caught
+                without you lifting a finger. Nothing ever leaves your phone.
+              </p>
+              <button
+                type="button"
+                @click="$store.tour.next()"
+                class="pressable mt-6 min-h-12 w-full rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"
+              >
+                Continue
+              </button>
+            </section>
+          </template>
+
+          <template x-if="$store.tour.current === 'goals'">
+            <section class="paper relative rotate-[-0.4deg] p-6">
+              <h1 class="font-display text-xl font-semibold tracking-tight text-ink">Goals</h1>
+              <p class="mt-3 text-sm font-light leading-relaxed text-ink-2">
+                Lock a target and a date for something you are actually saving toward. Deposit or
+                withdraw straight through M Pesa, or just tell SaveLock what is really sitting in the
+                account by hand.
+              </p>
+              <button
+                type="button"
+                @click="$store.tour.next()"
+                class="pressable mt-6 min-h-12 w-full rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"
+              >
+                Continue
+              </button>
+            </section>
+          </template>
+
+          <template x-if="$store.tour.current === 'report'">
+            <section class="paper relative rotate-[0.4deg] p-6">
+              <h1 class="font-display text-xl font-semibold tracking-tight text-ink">Report</h1>
+              <p class="mt-3 text-sm font-light leading-relaxed text-ink-2">
+                Every day you have already closed out, in one place. What you spent, whether you
+                stayed under budget, and how the pattern looks over time.
+              </p>
+              <button
+                type="button"
+                @click="$store.tour.next()"
+                class="pressable mt-6 min-h-12 w-full rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"
+              >
+                Continue
+              </button>
+            </section>
+          </template>
+
+          <template x-if="$store.tour.current === 'settings'">
+            <section class="paper relative rotate-[-0.4deg] p-6">
+              <h1 class="font-display text-xl font-semibold tracking-tight text-ink">Settings</h1>
+              <p class="mt-3 text-sm font-light leading-relaxed text-ink-2">
+                Your daily limit, categories, and backups all live here. Turn on a morning or evening
+                reminder if a nudge helps.
+              </p>
+              <p class="mt-3 text-sm font-light leading-relaxed text-ink-2">
+                Reminders need permission to send notifications. You can turn them off again any time.
+              </p>
+              <button
+                type="button"
+                @click="$store.tour.next()"
+                class="pressable mt-6 min-h-12 w-full rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"
+              >
+                Continue
+              </button>
+            </section>
+          </template>
+
+          <template x-if="$store.tour.current === 'groups'">
+            <section class="paper relative rotate-[0.4deg] p-6">
+              <h1 class="font-display text-xl font-semibold tracking-tight text-ink">Groups</h1>
+              <p class="mt-3 text-sm font-light leading-relaxed text-ink-2">
+                Start a savings challenge with friends, or join one with a code. Nobody sees your
+                other goals or spending, only whether everyone showed up.
+              </p>
+              <button
+                type="button"
+                @click="$store.tour.finish()"
+                class="pressable mt-6 min-h-12 w-full rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"
+              >
+                Let's go
+              </button>
+            </section>
+          </template>
+        </div>
+      </div>
+    </div>
+
     <div x-data x-show="!$store.auth.blocked" x-cloak>
       <slot />
     </div>

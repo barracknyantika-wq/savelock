@@ -199,3 +199,80 @@ export function streakSprout(count) {
   out += `<circle cx="20" cy="${baseY}" r="2.4" fill="${color}"/>`;
   return `<svg viewBox="0 0 40 ${H}" aria-hidden="true" style="width:1.75rem;height:${(H / 16).toFixed(2)}rem;display:block">${out}</svg>`;
 }
+
+// Card level extension of streakSprout above: the same wobble offset
+// technique, the same growing plant idea, just bigger and made into a
+// fuller little scene (a ground line, a few scattered blades, soft rays
+// behind the plant once a milestone streak is reached) so it can stand as
+// the whole centerpiece of a streak card rather than a small accent next
+// to a number. Muted ochre and cream only, no gradients or gloss, meant to
+// read as clearly the same hand sketched aesthetic as the small sprout,
+// just given more room. Leaves cap at 10 here (a bigger canvas earns a
+// slightly higher cap than the inline sprout's 6) and the same 7-day
+// blossom milestone carries over unchanged.
+export function streakScene(count) {
+  const color = count > 0 ? PALETTE.lit : PALETTE.unlit;
+  const W = 220;
+  const H = 170;
+  const groundY = 140;
+  const leaves = Math.max(0, Math.min(10, count));
+  const flowering = count >= 7;
+  const stemX = W / 2;
+  const topY = groundY - 18 - leaves * 8;
+
+  // Hand-drawn ground line, gently wobbled rather than dead straight.
+  let ground = `M 20 ${groundY}`;
+  for (let x = 30; x <= W - 20; x += 20) {
+    const wob = ((x * 7) % 5) - 2;
+    ground += ` L ${x} ${(groundY + wob * 0.6).toFixed(1)}`;
+  }
+  let out = `<path d="${ground}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" opacity="0.55"/>`;
+
+  // Soft rays behind the plant once the streak reaches the same 7-day mark
+  // the sprout's blossom and the "First Week" badge already treat as
+  // meaningful — an intentionally quiet version of depositStamp's radiating
+  // burst, not a full stamp, since this is an ambient background touch, not
+  // the main event.
+  if (flowering) {
+    const rays = 10;
+    for (let i = 0; i < rays; i++) {
+      const a = Math.PI + (i / (rays - 1)) * Math.PI;
+      const x1 = (stemX + Math.cos(a) * 34).toFixed(1);
+      const y1 = (topY - 10 + Math.sin(a) * 34 * 0.6).toFixed(1);
+      const x2 = (stemX + Math.cos(a) * 54).toFixed(1);
+      const y2 = (topY - 10 + Math.sin(a) * 54 * 0.6).toFixed(1);
+      out += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${PALETTE.lit}" stroke-width="2" stroke-linecap="round" opacity="0.28"/>`;
+    }
+  }
+
+  // A few scattered ground blades either side of the stem, for texture —
+  // purely decorative, count-independent, so the scene never reads as
+  // empty even at zero.
+  [-46, -26, 30, 48].forEach((dx, i) => {
+    const wob = ((i * 11) % 3) - 1;
+    const bx = stemX + dx;
+    out += `<path d="M ${bx} ${groundY} Q ${(bx + 3 + wob).toFixed(1)} ${groundY - 9} ${(bx + wob).toFixed(1)} ${groundY - 15}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" opacity="0.45"/>`;
+  });
+
+  out += `<line x1="${stemX}" y1="${groundY}" x2="${stemX}" y2="${topY.toFixed(1)}" stroke="${color}" stroke-width="3" stroke-linecap="round"/>`;
+  for (let i = 0; i < leaves; i++) {
+    const y = groundY - 20 - i * 8;
+    const side = i % 2 === 0 ? 1 : -1;
+    const wob = ((i * 13) % 4) - 2;
+    const reach = 13 + wob;
+    const x2 = stemX + side * reach;
+    out += `<path d="M ${stemX} ${y} Q ${(stemX + side * (reach * 0.6)).toFixed(1)} ${(y - 5).toFixed(1)} ${x2.toFixed(1)} ${(y - 2).toFixed(1)}" fill="none" stroke="${color}" stroke-width="2.6" stroke-linecap="round"/>`;
+  }
+  if (flowering) {
+    const petals = [0, 60, 120, 180, 240, 300].map((deg) => {
+      const a = (deg * Math.PI) / 180;
+      const px = (stemX + Math.cos(a) * 9).toFixed(1);
+      const py = (topY - 9 + Math.sin(a) * 9).toFixed(1);
+      return `<circle cx="${px}" cy="${py}" r="4.4" fill="${PALETTE.lit}" opacity="0.85"/>`;
+    }).join('');
+    out += petals + `<circle cx="${stemX}" cy="${(topY - 9).toFixed(1)}" r="3.4" fill="${PALETTE.litLow}"/>`;
+  }
+  out += `<circle cx="${stemX}" cy="${groundY}" r="4" fill="${color}"/>`;
+
+  return `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true" style="width:100%;height:auto;display:block">${out}</svg>`;
+}
