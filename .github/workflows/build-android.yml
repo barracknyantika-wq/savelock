@@ -13,13 +13,14 @@ on:
       - sms-feature
       - claude/savelock-savings-pwa-x7dslo
       - main
+      - v2-business
   # Lets you re-run this on demand from the Actions tab, any branch.
   workflow_dispatch:
 permissions:
   contents: write
 jobs:
   build-apk:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,7 +29,7 @@ jobs:
         with:
           node-version: 22
       - name: Set up JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           # AGP 8.x (this project uses 8.13.0, see android/build.gradle)
@@ -38,6 +39,8 @@ jobs:
           cache: gradle
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: ''
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses || true
       - name: Install Android SDK platform (compileSdk/targetSdk = 36, see android/variables.gradle)
@@ -49,8 +52,8 @@ jobs:
         # every local build until these are configured in repo Settings ->
         # Secrets and variables -> Actions). See SUPABASE_SETUP.md.
         env:
-          PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL }}
-          PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
+          PUBLIC_SUPABASE_URL: ${{ github.ref_name == 'main' && secrets.PUBLIC_SUPABASE_URL || secrets.STAGING_SUPABASE_URL }}
+          PUBLIC_SUPABASE_ANON_KEY: ${{ github.ref_name == 'main' && secrets.PUBLIC_SUPABASE_ANON_KEY || secrets.STAGING_SUPABASE_ANON_KEY }}
         run: npm run build
       - name: Sync Capacitor Android project
         run: npx cap sync android
@@ -58,6 +61,8 @@ jobs:
         run: chmod +x android/gradlew
       - name: Build debug APK
         working-directory: android
+        env:
+          SAVELOCK_BETA: ${{ github.ref_name != 'main' }}
         run: ./gradlew assembleDebug --stacktrace
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -68,7 +73,8 @@ jobs:
       - name: Publish as latest release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: latest
-          name: Latest build
+          tag_name: ${{ github.ref_name == 'main' && 'latest' || 'beta' }}
+          prerelease: ${{ github.ref_name != 'main' }}
+          name: ${{ github.ref_name == 'main' && 'Latest build' || 'Beta build' }}
           body: Automatically updated on every build. This is always the newest APK.
           files: android/app/build/outputs/apk/debug/app-debug.apk

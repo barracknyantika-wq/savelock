@@ -54,6 +54,7 @@ class SmsReceiver : BroadcastReceiver() {
         const val KEY_NOTIFY_SPEND = "notify_spend"
         const val KEY_NOTIFY_RECEIVED = "notify_received"
         const val KEY_NOTIFY_MODE = "notify_mode" // "always" | "importantOnly"
+        const val KEY_TRUSTED_SENDERS = "trusted_generic_senders"
         const val CHANNEL_ID = "transactions"
         const val QUEUE_CAP = 200
         const val PROCESSED_CAP = 300
@@ -122,6 +123,32 @@ class SmsReceiver : BroadcastReceiver() {
             }
         }
 
+        // Per-sender learning: once the user confirms a "needs review"
+        // generic transaction was correct, future messages from that same
+        // sender score as trusted, lifting them into the auto tier. Never
+        // populated for MPESA -- that sender is already fully trusted via
+        // the strict parser.
+        fun readTrustedSenders(sp: SharedPreferences): Set<String> {
+            return try {
+                val arr = JSONArray(sp.getString(KEY_TRUSTED_SENDERS, "[]") ?: "[]")
+                (0 until arr.length()).mapNotNull { arr.optString(it, null) }.toSet()
+            } catch (e: Exception) {
+                Log.e(TAG, "readTrustedSenders failed", e)
+                emptySet()
+            }
+        }
+
+        fun markSenderTrusted(context: Context, sender: String) {
+            try {
+                val sp = prefs(context)
+                val current = readTrustedSenders(sp).toMutableSet()
+                current.add(GenericSmsEngine.senderKey(sender))
+                sp.edit().putString(KEY_TRUSTED_SENDERS, JSONArray(current.toList()).toString()).apply()
+            } catch (e: Exception) {
+                Log.e(TAG, "markSenderTrusted failed", e)
+            }
+        }
+
         fun ensureChannel(context: Context) {
             try {
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -151,6 +178,14 @@ class SmsReceiver : BroadcastReceiver() {
             put("receivedAt", tx.receivedAt)
             put("viaFuliza", tx.viaFuliza)
             put("fulizaAmount", tx.fulizaAmount ?: JSONObject.NULL)
+            put("provider", tx.provider ?: JSONObject.NULL)
+            put("confidence", tx.confidence ?: JSONObject.NULL)
+            put("tier", tx.tier ?: JSONObject.NULL)
+            put("needsReview", tx.tier == "review")
+            put("currency", tx.currency ?: JSONObject.NULL)
+            put("accountLast4", tx.accountLast4 ?: JSONObject.NULL)
+            put("reference", tx.reference ?: JSONObject.NULL)
+            put("incomeCategory", tx.incomeCategory ?: JSONObject.NULL)
         }
 
         // Opt-in "Deep SMS reconciliation" only — reads M-Pesa messages
@@ -216,23 +251,24 @@ class SmsReceiver : BroadcastReceiver() {
         }
 
         val sender = messages[0].originatingAddress
-        if (!MpesaParser.isMpesaSender(sender)) {
-            Log.d(TAG, "Ignoring SMS from non-M-Pesa sender")
-            return // never touch non-M-Pesa SMS
-        }
-
         val body = messages.joinToString("") { it.messageBody ?: "" }
-        val tx = MpesaParser.parse(body, System.currentTimeMillis())
+        val isMpesa = MpesaParser.isMpesaSender(sender)
+        val tx = if (isMpesa) {
+            MpesaParser.parse(body, System.currentTimeMillis())
+        } else {
+            GenericSmsEngine.parse(body, sender, System.currentTimeMillis(), readTrustedSenders(prefs(context)))
+        }
         if (tx == null) {
-            // Deliberately conservative parser: an unrecognized format is
-            // silently dropped by design (a wrong auto-log is worse than a
-            // missed one) — but "silently" should only mean "not logged as
-            // a transaction," not "invisible for diagnosis." Log length only,
-            // never the message body itself (may contain personal details).
-            Log.w(TAG, "M-Pesa SMS received but did not match any known format (length=${body.length})")
+            // Deliberately conservative: an unrecognized/low-confidence format
+            // is silently dropped by design (a wrong auto-log is worse than a
+            // missed one) -- but "silently" should only mean "not logged as a
+            // transaction," not "invisible for diagnosis." Log length and
+            // sender kind only, never the message body itself (may contain
+            // personal details).
+            Log.w(TAG, "SMS received but did not match any known format (mpesaSender=$isMpesa length=${body.length})")
             return
         }
-        Log.d(TAG, "Parsed M-Pesa SMS: type=${tx.type} subtype=${tx.subtype} code=${tx.mpesaCode}")
+        Log.d(TAG, "Parsed SMS: type=${tx.type} subtype=${tx.subtype} tier=${tx.tier ?: "auto"} code=${tx.mpesaCode}")
 
         val sp = prefs(context)
         val processed = readJsonArray(sp, KEY_PROCESSED_CODES)

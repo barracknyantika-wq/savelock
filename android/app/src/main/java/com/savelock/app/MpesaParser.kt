@@ -20,7 +20,16 @@ data class MpesaTransaction(
     // only on "spend" transactions. fuliza_repayment/activation/interest
     // are their own types and are never double-counted as a spend.
     val viaFuliza: Boolean = false,
-    val fulizaAmount: Double? = null
+    val fulizaAmount: Double? = null,
+    // Generic (non-M-Pesa) fields, populated only by GenericSmsEngine.parse().
+    // Null/default for every M-Pesa-parsed transaction.
+    val provider: String? = null,
+    val confidence: Double? = null,
+    val tier: String? = null, // "auto" | "review", null for M-Pesa (always full trust)
+    val currency: String? = null,
+    val accountLast4: String? = null,
+    val reference: String? = null,
+    val incomeCategory: String? = null
 )
 
 object MpesaParser {

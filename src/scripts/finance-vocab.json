@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "thresholds": { "auto": 0.75, "review": 0.5 },
+  "failed": ["insufficient", "declined", "failed", "unsuccessful", "not successful", "could not", "unable to", "has been blocked"],
+  "otp": ["otp", "one time password", "one-time password", "verification code", "passcode", "security code"],
+  "promo": ["you qualify", "pre-approved", "preapproved", "loan of", "loan limit", "apply now", "dial *", "dial #", "special offer", "promo", "terms and conditions", "download the app", "congratulations"],
+  "balanceWords": ["balance", "bal", "avail", "available", "ledger"],
+  "feeWords": ["fee", "fees", "charge", "charges", "commission", "excise", "tax", "levy", "duty", "cost"],
+  "limitWords": ["limit"],
+  "debit": [
+    ["debited", 3], ["debit alert", 3], ["withdrawn", 3], ["withdrew", 3], ["withdrawal", 2],
+    ["purchase", 2], ["purchased", 2], ["spent", 2], ["sent to", 3], ["transferred to", 3],
+    ["transfer to", 2], ["paid to", 3], ["payment to", 2], ["paid", 1], ["payment", 1],
+    ["charged", 2], ["deducted", 3], ["bought", 2], ["used at", 3], ["pos", 1], ["atm", 1],
+    ["standing order", 2], ["direct debit", 3], ["from your account", 4], ["from your a/c", 4],
+    ["from a/c", 4], ["from acc", 3], ["from account", 3]
+  ],
+  "credit": [
+    ["credited", 3], ["credit alert", 3], ["received", 3], ["deposited", 3], ["deposit", 1],
+    ["salary", 2], ["refund", 2], ["refunded", 3], ["reversal", 2], ["reversed", 2],
+    ["transferred from", 3], ["transfer from", 2], ["inward", 2], ["cash in", 2],
+    ["to your account", 4], ["to your a/c", 4], ["into your account", 4], ["to a/c", 3], ["to acc", 2]
+  ],
+  "categoryHints": {
+    "Rent": ["rent", "landlord", "apartment", "apartments", "estates", "housing"],
+    "Transport": ["uber", "bolt", "little cab", "matatu", "sgr", "shuttle", "taxi", "fuel", "petrol", "shell", "rubis", "kenol"],
+    "Bills": ["kplc", "kenya power", "nairobi water", "dstv", "gotv", "startimes", "zuku", "utility", "utilities"],
+    "Food": ["java", "kfc", "pizza", "naivas", "quickmart", "carrefour", "tuskys", "chandarana", "supermarket", "restaurant", "eatery", "cafe", "butchery", "bakery", "hotel"],
+    "Airtime": ["airtime", "bundles"],
+    "Shopping": ["shop", "mall", "store", "boutique", "mart"]
+  },
+  "incomeHints": {
+    "Salary": ["salary", "payroll", "wages"],
+    "Refund": ["refund", "refunded", "reversal", "reversed"]
+  }
+}

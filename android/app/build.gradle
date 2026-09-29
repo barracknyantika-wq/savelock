@@ -25,6 +25,16 @@ android {
         }
     }
     buildTypes {
+        debug {
+            // Set by CI only for non-main builds (see .github/workflows/build-android.yml)
+            // so a beta build can install alongside the live app instead of
+            // overwriting it. Untouched (or "false") on main -- the live app's
+            // applicationId/name never change.
+            if (System.getenv("SAVELOCK_BETA") == "true") {
+                applicationIdSuffix ".beta"
+                resValue "string", "app_name", "SaveLock Beta"
+            }
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
