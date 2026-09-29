@@ -61,6 +61,8 @@ jobs:
         run: chmod +x android/gradlew
       - name: Build debug APK
         working-directory: android
+        env:
+          SAVELOCK_BETA: ${{ github.ref_name != 'main' }}
         run: ./gradlew assembleDebug --stacktrace
       - name: Upload APK
         uses: actions/upload-artifact@v4
