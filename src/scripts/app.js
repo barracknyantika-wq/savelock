@@ -1182,15 +1182,19 @@ Alpine.store('lock', {
     if (this._verifying) return;
     this._verifying = true;
     this.error = '';
+    if (window.__debugLog) window.__debugLog('attempt() starting, calling biometricUnlock()');
     try {
       const result = await biometricUnlock();
+      if (window.__debugLog) window.__debugLog('biometricUnlock() returned: ' + JSON.stringify(result));
       if (result.ok) {
         this.blocked = false;
+        if (window.__debugLog) window.__debugLog('blocked set to false');
       } else {
-        // DIAGNOSTIC: shows the real reason instead of a generic message,
-        // so the actual failure mode is visible without needing adb/logcat.
         this.error = 'Could not unlock (' + result.reason + '). Tap to try again.';
       }
+    } catch (e) {
+      if (window.__debugLog) window.__debugLog('attempt() threw: ' + (e && e.message ? e.message : String(e)));
+      this.error = 'Unexpected error, see panel below.';
     } finally {
       this._verifying = false;
     }

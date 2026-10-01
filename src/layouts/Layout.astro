@@ -491,6 +491,39 @@ const tabs = [
       </div>
     </nav>
 
+    <!--
+      TEMPORARY diagnostic panel: catches any JS error or unhandled promise
+      rejection anywhere in the app and shows it as plain text on screen.
+      Added because ADB wireless pairing has not been reachable from this
+      machine, so this is the fallback way to see what is actually failing.
+      Safe to leave in -- renders nothing unless something actually throws.
+      Remove once the real bug is found and fixed.
+    -->
+    <div
+      id="debug-panel"
+      style="display:none;position:fixed;inset:auto 0 0 0;z-index:9999;max-height:50vh;overflow-y:auto;background:#1a0000;color:#ffb3b3;font-family:monospace;font-size:11px;padding:10px;white-space:pre-wrap;border-top:2px solid red;"
+    ></div>
+    <script is:inline>
+      (function () {
+        var panel = document.getElementById('debug-panel');
+        var lines = [];
+        function show(msg) {
+          lines.push(new Date().toISOString().slice(11, 19) + '  ' + msg);
+          if (lines.length > 40) lines.shift();
+          panel.textContent = lines.join('\n');
+          panel.style.display = 'block';
+        }
+        window.addEventListener('error', function (e) {
+          show('ERROR: ' + (e.message || e) + (e.filename ? ' @' + e.filename + ':' + e.lineno : ''));
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e.reason;
+          var msg = r && r.message ? r.message : (typeof r === 'object' ? JSON.stringify(r) : String(r));
+          show('UNHANDLED PROMISE REJECTION: ' + msg);
+        });
+        window.__debugLog = show;
+      })();
+    </script>
     <script src="../scripts/app.js"></script>
     <script is:inline define:vars={{ swUrl: `${base}/sw.js`, prod: import.meta.env.PROD }}>
       if (prod && 'serviceWorker' in navigator) {
