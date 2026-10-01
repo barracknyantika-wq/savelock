@@ -1149,6 +1149,13 @@ Alpine.store('lock', {
   // stuck locked even after a correct unlock. While true, check()/attempt()
   // triggered by a resume are ignored rather than re-entered.
   _verifying: false,
+  // CONFIRMED (on-device log): dismissing the native prompt itself fires
+  // a 'resume' event on this device even on a clean, correct unlock --
+  // not just when interrupted. Without this, that resume instantly
+  // re-triggers check() and re-locks the screen a moment after every
+  // success, looping forever. A resume landing within this window of a
+  // real success is ignored rather than treated as "app reopened".
+  _justUnlockedAt: 0,
 
   get enabled() {
     return store().settings.appLockEnabled;
@@ -1161,6 +1168,7 @@ Alpine.store('lock', {
       return;
     }
     if (this._verifying) return;
+    if (Date.now() - this._justUnlockedAt < 3000) return;
     this.checking = true;
     this.error = '';
     this.available = await isLockAvailable();
@@ -1188,6 +1196,7 @@ Alpine.store('lock', {
       if (window.__debugLog) window.__debugLog('biometricUnlock() returned: ' + JSON.stringify(result));
       if (result.ok) {
         this.blocked = false;
+        this._justUnlockedAt = Date.now();
         if (window.__debugLog) window.__debugLog('blocked set to false');
       } else {
         this.error = 'Could not unlock (' + result.reason + '). Tap to try again.';
