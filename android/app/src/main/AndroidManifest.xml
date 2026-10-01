@@ -95,7 +95,7 @@
       prompt shown on every app open and resume, same idea as the M-Pesa
       app. USE_BIOMETRIC covers fingerprint/face on modern Android;
       USE_FINGERPRINT is the older pre-Android-9 equivalent, harmless to
-      also declare. No new data permission here -- this never reads SMS,
+      also declare. No new data permission is declared here; this never reads SMS,
       contacts, or anything else, it only asks Android to show its own
       lock prompt.
     -->
