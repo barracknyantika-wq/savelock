@@ -1183,11 +1183,13 @@ Alpine.store('lock', {
     this._verifying = true;
     this.error = '';
     try {
-      const ok = await biometricUnlock();
-      if (ok) {
+      const result = await biometricUnlock();
+      if (result.ok) {
         this.blocked = false;
       } else {
-        this.error = 'Try again to continue.';
+        // DIAGNOSTIC: shows the real reason instead of a generic message,
+        // so the actual failure mode is visible without needing adb/logcat.
+        this.error = 'Could not unlock (' + result.reason + '). Tap to try again.';
       }
     } finally {
       this._verifying = false;
