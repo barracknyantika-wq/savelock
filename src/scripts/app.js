@@ -1190,20 +1190,16 @@ Alpine.store('lock', {
     if (this._verifying) return;
     this._verifying = true;
     this.error = '';
-    if (window.__debugLog) window.__debugLog('attempt() starting, calling biometricUnlock()');
     try {
       const result = await biometricUnlock();
-      if (window.__debugLog) window.__debugLog('biometricUnlock() returned: ' + JSON.stringify(result));
       if (result.ok) {
         this.blocked = false;
         this._justUnlockedAt = Date.now();
-        if (window.__debugLog) window.__debugLog('blocked set to false');
       } else {
         this.error = 'Could not unlock (' + result.reason + '). Tap to try again.';
       }
     } catch (e) {
-      if (window.__debugLog) window.__debugLog('attempt() threw: ' + (e && e.message ? e.message : String(e)));
-      this.error = 'Unexpected error, see panel below.';
+      this.error = 'Something went wrong unlocking. Tap to try again.';
     } finally {
       this._verifying = false;
     }
