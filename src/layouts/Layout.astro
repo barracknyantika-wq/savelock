@@ -223,6 +223,38 @@ const tabs = [
     </div>
 
     <!--
+      Native-only app lock. Requires the device's own biometric/PIN prompt
+      on every app open and resume, the same way M-Pesa gates itself -- see
+      Alpine.store('lock') in app.js. Always invisible on a non-native
+      build. Sits above the sign-in gate (z-62 vs z-60) so it is the very
+      last thing between someone and the app's data, even if auth somehow
+      resolves while this is still checking.
+    -->
+    <div x-data x-show="$store.lock.blocked" x-cloak class="fixed inset-0 z-[62] flex items-center justify-center bg-canvas px-5">
+      <div class="w-full max-w-sm text-center">
+        <template x-if="$store.lock.checking">
+          <p class="text-sm font-light text-cream-2">Unlocking...</p>
+        </template>
+        <template x-if="!$store.lock.checking">
+          <section class="paper relative rotate-[-0.5deg] p-6">
+            <h1 class="font-display text-lg font-semibold text-ink">SaveLock is locked</h1>
+            <p class="mt-2 text-sm font-light leading-relaxed text-ink-2">
+              Confirm it's you to continue.
+            </p>
+            <p x-show="$store.lock.error" x-cloak class="mt-2 text-sm font-medium text-brick" x-text="$store.lock.error"></p>
+            <button
+              type="button"
+              @click="$store.lock.attempt()"
+              class="pressable mt-4 min-h-12 w-full rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"
+            >
+              Unlock
+            </button>
+          </section>
+        </template>
+      </div>
+    </div>
+
+    <!--
       One time onboarding tour: the developer letter, then a short screen
       for each real tab in order (Today, Goals, Report, Settings, Groups).
       Shown exactly once, right after the very first successful sign in
@@ -363,7 +395,7 @@ const tabs = [
       </div>
     </div>
 
-    <div x-data x-show="!$store.auth.blocked" x-cloak>
+    <div x-data x-show="!$store.auth.blocked && !$store.lock.blocked" x-cloak>
       <slot />
     </div>
 
@@ -388,7 +420,7 @@ const tabs = [
     <!-- floating pill nav, off the bottom edge -->
     <nav
       x-data
-      x-show="!$store.auth.blocked"
+      x-show="!$store.auth.blocked && !$store.lock.blocked"
       x-cloak
       class="fixed bottom-[calc(env(safe-area-inset-bottom)+14px)] left-1/2 z-40 w-[min(92%,380px)] -translate-x-1/2"
       aria-label="Main"

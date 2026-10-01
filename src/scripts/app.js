@@ -1,4 +1,5 @@
 import Alpine from 'alpinejs';
+import { App } from '@capacitor/app';
 import { registerStore, parseAmount, todayStr, BADGE_DEFS } from './store.js';
 import { tickGauge, sketchBars, categoryBars, squiggle, handCheck, inkBlot, depositStamp, streakSprout, streakScene } from './viz.js';
 import {
@@ -17,6 +18,7 @@ import {
   hapticSuccess,
   hapticCelebrate,
 } from './native-bridge.js';
+import { isLockAvailable, unlock as biometricUnlock } from './app-lock.js';
 import {
   isCloudConfigured,
   initCloudSync,
@@ -1126,6 +1128,63 @@ Alpine.store('tour', {
   },
 });
 
+// Native-only app lock: gates the whole app behind the device's own
+// biometric/PIN prompt (app-lock.js), the same way M-Pesa does. Mirrors
+// the shape of Alpine.store('auth') above -- Layout.astro shows the lock
+// overlay whenever $store.lock.blocked is true, on top of (and resolved
+// independently from) the sign-in gate. Always unblocked on a non-native
+// build, there is nothing meaningful to lock there.
+Alpine.store('lock', {
+  native: isNative(),
+  // True from the start on a native build, so there is never a flash of
+  // unlocked content before the first check below actually resolves.
+  blocked: isNative(),
+  checking: true,
+  available: true,
+  error: '',
+
+  get enabled() {
+    return store().settings.appLockEnabled;
+  },
+
+  async check() {
+    if (!this.native || !this.enabled) {
+      this.blocked = false;
+      this.checking = false;
+      return;
+    }
+    this.checking = true;
+    this.error = '';
+    this.available = await isLockAvailable();
+    if (!this.available) {
+      // No fingerprint/face/PIN configured on this device at all -- there
+      // is nothing to enforce, so do not pretend to lock something that
+      // can never be unlocked. Settings should steer the person to set a
+      // device PIN if they want this feature.
+      this.blocked = false;
+      this.checking = false;
+      return;
+    }
+    this.blocked = true;
+    this.checking = false;
+    await this.attempt();
+  },
+
+  async attempt() {
+    this.error = '';
+    const ok = await biometricUnlock();
+    if (ok) {
+      this.blocked = false;
+    } else {
+      this.error = 'Try again to continue.';
+    }
+  },
+});
+
 Alpine.start();
 initNativeBridge(store());
 initCloudSync(store());
+Alpine.store('lock').check();
+App.addListener('resume', () => {
+  Alpine.store('lock').check();
+}).catch(() => {});

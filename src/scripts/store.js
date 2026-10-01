@@ -79,6 +79,12 @@ function defaultState() {
       // always-on auto-detect above didn't miss anything. Never enabled
       // without the user explicitly turning it on in Settings.
       deepReconciliationEnabled: false,
+      // Native-only app lock: require the device's own biometric/PIN prompt
+      // on every app open and resume, the same way the M-Pesa app gates
+      // itself (see app-lock.js and Alpine.store('lock') in app.js). Only
+      // ever enforced when the device can actually satisfy it -- a phone
+      // with no fingerprint/face/PIN set up is never silently locked out.
+      appLockEnabled: true,
       // Temporary, developer only: which visual treatment the streak cards
       // use, 'hand' (sketched, extends the existing sprout) or 'fire' (a
       // bright gamified card built around public/fire-streak.svg), so both
@@ -465,6 +471,11 @@ export function registerStore(Alpine) {
     setDeepReconciliation(enabled) {
       this.settings.deepReconciliationEnabled = !!enabled;
       if (!enabled) this.reconciliationAlert = [];
+      this.persist();
+    },
+
+    setAppLockEnabled(v) {
+      this.settings.appLockEnabled = !!v;
       this.persist();
     },
 

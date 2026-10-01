@@ -89,4 +89,16 @@
       that feature on from Settings, with its own consent explanation first.
     -->
     <uses-permission android:name="android.permission.READ_SMS" />
+
+    <!--
+      App lock (Settings -> App lock): the OS-native biometric/device-PIN
+      prompt shown on every app open and resume, same idea as the M-Pesa
+      app. USE_BIOMETRIC covers fingerprint/face on modern Android;
+      USE_FINGERPRINT is the older pre-Android-9 equivalent, harmless to
+      also declare. No new data permission here -- this never reads SMS,
+      contacts, or anything else, it only asks Android to show its own
+      lock prompt.
+    -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.USE_FINGERPRINT" />
 </manifest>
