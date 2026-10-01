@@ -1142,6 +1142,13 @@ Alpine.store('lock', {
   checking: true,
   available: true,
   error: '',
+  // Guards against a very real race: showing the OS biometric/PIN prompt
+  // briefly pauses the app, and that pause fires our own 'resume' listener
+  // again before the first prompt has finished -- without this guard, the
+  // second call starts a second check mid-attempt and the screen looks
+  // stuck locked even after a correct unlock. While true, check()/attempt()
+  // triggered by a resume are ignored rather than re-entered.
+  _verifying: false,
 
   get enabled() {
     return store().settings.appLockEnabled;
@@ -1153,6 +1160,7 @@ Alpine.store('lock', {
       this.checking = false;
       return;
     }
+    if (this._verifying) return;
     this.checking = true;
     this.error = '';
     this.available = await isLockAvailable();
@@ -1171,12 +1179,18 @@ Alpine.store('lock', {
   },
 
   async attempt() {
+    if (this._verifying) return;
+    this._verifying = true;
     this.error = '';
-    const ok = await biometricUnlock();
-    if (ok) {
-      this.blocked = false;
-    } else {
-      this.error = 'Try again to continue.';
+    try {
+      const ok = await biometricUnlock();
+      if (ok) {
+        this.blocked = false;
+      } else {
+        this.error = 'Try again to continue.';
+      }
+    } finally {
+      this._verifying = false;
     }
   },
 });
