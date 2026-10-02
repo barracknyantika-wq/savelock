@@ -86,6 +86,11 @@ function toast(message) {
 }
 Alpine.magic('toast', () => toast);
 
+// UI-only state for the notifications bell panel (Layout.astro). Which
+// notification (if any) is expanded in the detail view -- not persisted,
+// closing and reopening the panel always starts back at the list.
+Alpine.store('notif', { open: false, selected: null });
+
 const MILESTONE_COPY = {
   25: (name) => `Quarter of the way to ${name}. Keep going.`,
   50: (name) => `Halfway to ${name}. Nice pace.`,

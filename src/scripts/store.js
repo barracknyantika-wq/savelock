@@ -5,6 +5,8 @@ const KEY = 'savelock:v1';
 const HISTORY_CAP = 180;
 const SPEND_LOG_CAP = 500;
 const FULIZA_EVENTS_CAP = 200;
+const INCOME_LOG_CAP = 500;
+const NOTIFICATIONS_CAP = 200;
 const MILESTONES = [25, 50, 75, 100];
 
 export function todayStr(d = new Date()) {
@@ -106,6 +108,11 @@ function defaultState() {
     // category intact — day.spends only holds *today's* still-editable
     // list, so category breakdowns need this to see further back.
     spendLog: [],
+    // Money received via SMS detection (M-Pesa "received" or a bank credit
+    // from the generic engine). Never participates in the daily budget or
+    // streak -- its own ledger, one flat capped list, not split
+    // today/history since income has no day-boundary concept to roll over.
+    incomeLog: [],
     goals: [],
     breaks: [],
     // Date string of the last reconciliation check, so it only runs once
@@ -120,6 +127,10 @@ function defaultState() {
     // only, never counted toward spentToday (repaying or being charged for
     // Fuliza isn't a new expense, it's clearing/servicing a past one).
     fulizaEvents: [],
+    // Bell icon history: every expense/income SMS-detection and review
+    // flag the app has ever surfaced, newest first, capped. Read/unread
+    // state lives on each entry; tapping one in the UI marks it read.
+    notifications: [],
     // ---- engagement: badges + optional weekly challenge ----------------
     badges: [],
     stats: { longestStreak: 0, longestSavingsStreak: 0, biggestSingleDaySave: 0, biggestSingleDaySaveDate: null },
@@ -145,10 +156,12 @@ function load() {
       savingsStreak: { ...base.savingsStreak, ...(saved.savingsStreak || {}) },
       history: Array.isArray(saved.history) ? saved.history : [],
       spendLog: Array.isArray(saved.spendLog) ? saved.spendLog : [],
+      incomeLog: Array.isArray(saved.incomeLog) ? saved.incomeLog : [],
       goals: Array.isArray(saved.goals) ? saved.goals : [],
       breaks: Array.isArray(saved.breaks) ? saved.breaks : [],
       processedMpesaCodes: Array.isArray(saved.processedMpesaCodes) ? saved.processedMpesaCodes : [],
       fulizaEvents: Array.isArray(saved.fulizaEvents) ? saved.fulizaEvents : [],
+      notifications: Array.isArray(saved.notifications) ? saved.notifications : [],
       badges: Array.isArray(saved.badges) ? saved.badges : [],
       stats: { ...base.stats, ...(saved.stats || {}) },
       challenge: saved.challenge && saved.challenge.startDate ? saved.challenge : null,
@@ -190,14 +203,14 @@ export function registerStore(Alpine) {
 
     persist() {
       const {
-        version, settings, day, streak, savingsStreak, history, spendLog, goals, breaks, processedMpesaCodes,
-        fulizaEvents, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
+        version, settings, day, streak, savingsStreak, history, spendLog, incomeLog, goals, breaks, processedMpesaCodes,
+        fulizaEvents, notifications, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
       } = this;
       localStorage.setItem(
         KEY,
         JSON.stringify({
-          version, settings, day, streak, savingsStreak, history, spendLog, goals, breaks, processedMpesaCodes,
-          fulizaEvents, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
+          version, settings, day, streak, savingsStreak, history, spendLog, incomeLog, goals, breaks, processedMpesaCodes,
+          fulizaEvents, notifications, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
         })
       );
       window.dispatchEvent(new CustomEvent('savelock:persist'));
@@ -479,6 +492,39 @@ export function registerStore(Alpine) {
       this.persist();
     },
 
+    // ---- notifications bell ---------------------------------------------
+
+    addNotification(type, title, body, data = {}) {
+      const n = { id: uid(), type, title, body, data, read: false, at: Date.now() };
+      this.notifications.unshift(n);
+      if (this.notifications.length > NOTIFICATIONS_CAP) {
+        this.notifications = this.notifications.slice(0, NOTIFICATIONS_CAP);
+      }
+      return n;
+    },
+
+    markNotificationRead(id) {
+      const n = this.notifications.find((x) => x.id === id);
+      if (!n || n.read) return;
+      n.read = true;
+      this.persist();
+    },
+
+    markAllNotificationsRead() {
+      let changed = false;
+      for (const n of this.notifications) {
+        if (!n.read) {
+          n.read = true;
+          changed = true;
+        }
+      }
+      if (changed) this.persist();
+    },
+
+    get unreadNotificationCount() {
+      return this.notifications.filter((n) => !n.read).length;
+    },
+
     // Compares M-Pesa transactions read straight from the phone's inbox
     // against what's already been logged (by mpesaCode), returning any
     // that appear to have been missed by the always-on auto-detect. A
@@ -557,6 +603,32 @@ export function registerStore(Alpine) {
       return this.categoryBreakdown(days).slice(0, n);
     },
 
+    // Mirrors categoryBreakdown/topCategories above, for incomeLog instead
+    // of spends.
+    incomeBreakdown(days) {
+      const cutoff = Date.now() - days * 86400000;
+      const all = this.incomeLog.filter((s) => s.at >= cutoff);
+      const totals = {};
+      let grandTotal = 0;
+      for (const s of all) {
+        const cat = s.category || 'Other income';
+        totals[cat] = (totals[cat] || 0) + s.amount;
+        grandTotal += s.amount;
+      }
+      return Object.entries(totals)
+        .map(([category, total]) => ({
+          category,
+          total: Math.round(total * 100) / 100,
+          pct: grandTotal > 0 ? total / grandTotal : 0,
+        }))
+        .sort((a, b) => b.total - a.total);
+    },
+
+    totalIncome(days) {
+      const cutoff = Date.now() - days * 86400000;
+      return Math.round(this.incomeLog.filter((s) => s.at >= cutoff).reduce((s, x) => s + x.amount, 0) * 100) / 100;
+    },
+
     // ---- SMS auto-detected transactions (native Android shell only) -----
     //
     // The native SmsReceiver parses+notifies+queues instantly, even while
@@ -588,9 +660,38 @@ export function registerStore(Alpine) {
         this.persist();
         return null;
       }
+      if (tx.type === 'received') {
+        // Money received: its own ledger (incomeLog), saved the same way
+        // an expense is -- never counted toward spentToday or the budget
+        // streak, those stay expense-only on purpose.
+        const amount = Math.round(tx.amount * 100) / 100;
+        const record = {
+          id: uid(),
+          amount,
+          note: tx.counterparty || '',
+          category: tx.incomeCategory || 'Other income',
+          at: tx.receivedAt || Date.now(),
+          source: 'sms',
+          mpesaCode: tx.mpesaCode,
+          provider: tx.provider || 'MPESA',
+          needsReview: !!tx.needsReview,
+        };
+        this.incomeLog.push(record);
+        if (this.incomeLog.length > INCOME_LOG_CAP) {
+          this.incomeLog = this.incomeLog.slice(-INCOME_LOG_CAP);
+        }
+        this.addNotification(
+          tx.needsReview ? 'needs_review' : 'income_detected',
+          tx.needsReview ? 'Needs review' : 'Money received',
+          this.money(amount) + ' from ' + (record.note || 'unknown sender'),
+          { recordId: record.id, kind: 'income' }
+        );
+        this.persist();
+        return record;
+      }
       if (tx.type !== 'spend') {
-        // "received" — never counted as spending, just marked seen so a
-        // redelivered SMS can't notify twice.
+        // Any other type -- just marked seen so a redelivered SMS can't
+        // notify twice.
         this.persist();
         return null;
       }
@@ -610,6 +711,7 @@ export function registerStore(Alpine) {
         // kept for the "via Fuliza" badge, financial-awareness only.
         viaFuliza: !!tx.viaFuliza,
         fulizaAmount: tx.viaFuliza ? tx.fulizaAmount : null,
+        needsReview: !!tx.needsReview,
       };
 
       // The native receiver queues transactions the moment an SMS arrives,
@@ -642,6 +744,12 @@ export function registerStore(Alpine) {
         this.day.spends.push(record);
         this.flashSpend(record.id);
       }
+      this.addNotification(
+        tx.needsReview ? 'needs_review' : 'expense_detected',
+        tx.needsReview ? 'Needs review' : 'Expense detected',
+        this.money(amount) + ' to ' + (record.note || 'unknown payee'),
+        { recordId: record.id, kind: 'expense' }
+      );
       this.persist();
       return record;
     },
@@ -829,8 +937,8 @@ export function registerStore(Alpine) {
 
     exportData() {
       const {
-        version, settings, day, streak, savingsStreak, history, spendLog, goals, breaks, processedMpesaCodes,
-        fulizaEvents, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
+        version, settings, day, streak, savingsStreak, history, spendLog, incomeLog, goals, breaks, processedMpesaCodes,
+        fulizaEvents, notifications, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
       } = this;
       return JSON.stringify(
         {
@@ -838,8 +946,8 @@ export function registerStore(Alpine) {
           version,
           exportedAt: new Date().toISOString(),
           data: {
-            version, settings, day, streak, savingsStreak, history, spendLog, goals, breaks, processedMpesaCodes,
-            fulizaEvents, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
+            version, settings, day, streak, savingsStreak, history, spendLog, incomeLog, goals, breaks, processedMpesaCodes,
+            fulizaEvents, notifications, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
           },
         },
         null,
