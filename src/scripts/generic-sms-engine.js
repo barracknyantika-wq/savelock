@@ -1,19 +1,8 @@
-// Template-free financial SMS engine. Recognizes bank/wallet alerts by
-// structure and vocabulary instead of per-bank templates, so it works for
-// banks nobody has written a rule for yet. Pure function of (text, options):
-// no imports, no DOM, so it runs in the WebView, in Node tests, and is small
-// enough to port to Kotlin against the same finance-vocab.json.
-//
-// Deliberately conservative, like mpesa-parser.js: a wrong auto-log is worse
-// than a missed one. Every result carries a confidence and a tier:
-//   auto   (>= thresholds.auto)   safe to log without asking
-//   review (>= thresholds.review) log as "needs review", user confirms
-//   below review                  rejected with reason 'low_confidence'
-//
-// parse() returns { ok:true, tx } or { ok:false, reason, confidence? }.
-// tx mirrors parseMpesaSms()'s shape (mpesaCode, type spend|received, ...)
-// so the existing drain/store path can consume it, plus provider,
-// confidence, tier, currency, accountLast4, reference, incomeCategory.
+// Classifies confirmed generic bank/wallet transactions by sender category
+// and completed-transaction structure, not loose keyword scores. This pure
+// module runs in the JS tests and mirrors the native Android Kotlin engine.
+// parse() returns { ok:true, tx } or { ok:false, reason }; loan reminders
+// use a private type that the store retains without counting or surfacing.
 
 const CUR = '(?:KES|KSHS?|USD|TZS|UGX)';
 const NUM = '(\\d{1,3}(?:,\\d{3})+(?:\\.\\d{1,2})?|\\d+(?:\\.\\d{1,2})?)';
@@ -38,8 +27,6 @@ const REF_RE = new RegExp(
   `${B0}(?:ref(?:erence)?|txn|trx|trans(?:action)?|rrn|receipt|conf(?:irmation)?)\\s*(?:no\\.?|number|id|code)?\\s*[:#\\-]?\\s*([A-Z0-9][A-Z0-9\\-]{5,24})`,
   'gi'
 );
-const FALLBACK_AMOUNT_RE = new RegExp(`${B0}(?:amt|amount|value)\\.?\\s*[:\\-]?\\s*${NUM}`, 'i');
-
 const CP_BODY = "([A-Za-z0-9][A-Za-z0-9 &'\\-/]{1,40}?)";
 const CP_STOP =
   '(?=\\s+(?:on|ref|reference|via|from|using|for|date|dated|bal|balance|avail|available|a/c|acc|account|txn|trx|at|to|narration)(?![A-Za-z0-9])|\\s*[.;,(]|\\s*$)';
@@ -47,6 +34,20 @@ const DEBIT_CUES = ['sent to', 'paid to', 'transferred to', 'transfer to', 'paym
 const CREDIT_CUES = ['received from', 'transferred from', 'transfer from', 'deposit from', 'payment from', 'credited by', 'from'];
 const BAD_CP = /^(your|my|the|a\/c|acc|account|card|self|you|atm|pos)(?![A-Za-z0-9])/i;
 const MASKED_CP = /^[\dXx*\s-]+$/;
+const LOAN_REMINDER_RE = /\b(?:repay\s+(?:kshs?|kes)\b|loan\s+eligibility|extend\s+by\b|have\s+not\s+yet\s+received\s+payment)\b/i;
+const CREDIT_RE = /\b(?:has\s+been\s+credited\s+to|you\s+have\s+received|successfully\s+sent\s+to\s+(?:you|your\s+(?:account|wallet)))\b/i;
+const DEBIT_RE = /\b(?:has\s+been\s+successfully\s+sent\s+to|has\s+been\s+debited)\b/i;
+const FAILED_RE = /\b(?:failed|unsuccessful|declined|could\s+not\s+be\s+completed)\b/i;
+
+export function senderCategory(sender) {
+  const key = senderKey(sender);
+  if (!key || key === 'UNK' || /^\d+$/.test(key)) return null;
+  if (/MPESA|SAFARICOM/.test(key)) return 'mpesa';
+  if (/LOAN|LEND|CREDIT|REPAY|KORO|TALA|BRANCH|ZENKA|FULIZA|M-SHWARI|MSHWARI/.test(key)) return 'lending';
+  if (/BANK|EQUITY|KCB|COOP|NCBA|ABSA|DTB|STANBIC|FAMILY|BARCLAYS|STANDARDCHARTERED|IANDM|IMBANK|SIDIAN|HF|CITI/.test(key)) return 'bank';
+  if (/WALLET|FINANCE|MICROFINANCE/.test(key)) return 'financial';
+  return null;
+}
 
 function findAmounts(text) {
   const found = [];
@@ -65,30 +66,9 @@ function findAmounts(text) {
 }
 
 export function createEngine(vocab) {
-  const T = vocab.thresholds;
-  const failedRe = anyOf(vocab.failed);
-  const otpRe = anyOf(vocab.otp);
-  const promoRes = vocab.promo.map((p) => anyOf([p]));
-  const balanceRe = anyOf(vocab.balanceWords);
-  const feeRe = anyOf(vocab.feeWords);
-  const limitRe = anyOf(vocab.limitWords);
-  const compileW = (list) => list.map(([p, w]) => ({ re: anyOf([p]), w }));
-  const debit = compileW(vocab.debit);
-  const credit = compileW(vocab.credit);
   const catHints = Object.entries(vocab.categoryHints).map(([k, v]) => [k, anyOf(v)]);
   const incHints = Object.entries(vocab.incomeHints).map(([k, v]) => [k, anyOf(v)]);
 
-  const score = (text, list) => {
-    let sum = 0;
-    let max = 0;
-    for (const e of list) {
-      if (e.re.test(text)) {
-        sum += e.w;
-        if (e.w > max) max = e.w;
-      }
-    }
-    return { sum, max };
-  };
   const firstHint = (list, s) => {
     for (const [k, r] of list) if (r.test(s)) return k;
     return null;
@@ -116,71 +96,59 @@ export function createEngine(vocab) {
     if (!body || typeof body !== 'string') return no('empty');
     const text = body.replace(/\s+/g, ' ').trim();
     if (text.length < 15 || text.length > 800) return no('length');
-
-    const d = score(text, debit);
-    const c = score(text, credit);
-    const maxW = Math.max(d.max, c.max);
-
-    if (failedRe.test(text)) return no('failed_transaction');
-    if (otpRe.test(text) && maxW < 3) return no('otp');
-    const promoHits = promoRes.filter((r) => r.test(text)).length;
-    if (promoHits && maxW < 3) return no('promo');
-
-    const amounts = findAmounts(text);
-    amounts.forEach((a, i) => {
-      const prevEnd = i ? amounts[i - 1].end : 0;
-      const ctx = text.slice(Math.max(prevEnd, a.start - 26), a.start);
-      a.kind = balanceRe.test(ctx) ? 'balance' : feeRe.test(ctx) ? 'fee' : limitRe.test(ctx) ? 'limit' : 'tx';
-    });
-    let txAmt = amounts.find((a) => a.kind === 'tx');
-    let usedFallback = false;
-    if (!txAmt) {
-      const fm = text.match(FALLBACK_AMOUNT_RE);
-      if (fm) {
-        txAmt = { value: toNum(fm[1]), currency: 'KES' };
-        usedFallback = true;
-      }
-    }
-    if (!txAmt || !(txAmt.value > 0)) return no('no_transaction_amount');
-
-    if (d.sum === 0 && c.sum === 0) return no('no_direction');
-    const diff = d.sum - c.sum;
-    if (diff === 0) return no('ambiguous_direction');
-    const isDebit = diff > 0;
-
-    const balance = amounts.find((a) => a.kind === 'balance')?.value ?? null;
-    const reference = findReference(text);
-    const accountLast4 = text.match(ACCT_RE)?.[1] ?? null;
-    const counterparty = findCounterparty(text, isDebit);
+    const category = senderCategory(opts.sender);
+    if (!category) return no('unrecognized_sender');
 
     const sk = senderKey(opts.sender);
-    const trusted = new Set((opts.trustedSenders ? [...opts.trustedSenders] : []).map(senderKey)).has(sk);
-    let conf = 0.15 + (Math.abs(diff) >= 3 ? 0.35 : 0.2);
-    if (opts.sender) conf += trusted ? 0.4 : /[A-Za-z]/.test(opts.sender) ? 0.2 : -0.3;
-    if (balance !== null) conf += 0.1;
-    if (reference) conf += 0.1;
-    if (accountLast4) conf += 0.05;
-    if (counterparty) conf += 0.05;
-    if (usedFallback) conf -= 0.15;
-    conf -= 0.3 * Math.min(promoHits, 2);
-    conf = Math.round(Math.min(1, Math.max(0, conf)) * 100) / 100;
-
-    const tier = conf >= T.auto ? 'auto' : conf >= T.review ? 'review' : null;
-    if (!tier) return no('low_confidence', { confidence: conf });
-
     const receivedAt = opts.receivedAtMs ?? Date.now();
-    const mpesaCode = reference ? `GEN${hash(sk)}${reference}` : `GEN${hash(`${sk}|${text}`)}`;
+    const amounts = findAmounts(text);
+    const reference = findReference(text);
+    const code = reference ? `GEN${hash(sk)}${reference}` : `GEN${hash(`${sk}|${text}`)}`;
+
+    if (category === 'lending' && LOAN_REMINDER_RE.test(text)) {
+      const amount = amounts.find((a) => a.value > 0)?.value ?? 0;
+      return {
+        ok: true,
+        tx: {
+          mpesaCode: code,
+          type: 'loan_reminder',
+          subtype: 'loan_reminder',
+          classification: 'loan_reminder',
+          amount,
+          counterparty: sk,
+          category: 'loan_reminder',
+          receivedAt,
+          provider: sk,
+          currency: amounts[0]?.currency ?? 'KES',
+        },
+      };
+    }
+
+    if (FAILED_RE.test(text)) return no('failed_transaction');
+    const isCredit = CREDIT_RE.test(text);
+    const isDebit = !isCredit && DEBIT_RE.test(text);
+    if (isCredit === isDebit) return no(isCredit ? 'ambiguous_direction' : 'no_completed_transaction');
+
+    const txAmt = amounts.find((a) => a.value > 0);
+    if (!txAmt || !(txAmt.value > 0)) return no('no_transaction_amount');
+
+    const accountLast4 = text.match(ACCT_RE)?.[1] ?? null;
+    const counterparty = findCounterparty(text, isDebit);
+    const recipient = text.match(/\bsuccessfully\s+sent\s+to\s+([A-Za-z][A-Za-z0-9 &'./-]{1,40})/i)?.[1]
+      ?.trim()
+      .replace(/[\s\-/]+$/, '');
+    const debit = isDebit;
     return {
       ok: true,
       tx: {
-        mpesaCode,
+        mpesaCode: code,
         type: isDebit ? 'spend' : 'received',
         subtype: 'generic',
         amount: txAmt.value,
-        counterparty: counterparty || (isDebit ? 'Unknown payee' : 'Unknown sender'),
+        counterparty: recipient || counterparty || (debit ? 'Unknown payee' : 'Unknown sender'),
         category: isDebit ? firstHint(catHints, text) || 'Other' : null,
         incomeCategory: isDebit ? null : firstHint(incHints, text) || 'Other income',
-        balance,
+        balance: null,
         receivedAt,
         viaFuliza: false,
         fulizaAmount: null,
@@ -188,9 +156,9 @@ export function createEngine(vocab) {
         currency: txAmt.currency,
         accountLast4,
         reference,
-        confidence: conf,
-        tier,
-        needsReview: tier === 'review',
+        confidence: 1,
+        tier: 'auto',
+        needsReview: false,
       },
     };
   }

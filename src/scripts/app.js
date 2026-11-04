@@ -1,7 +1,7 @@
 import Alpine from 'alpinejs';
 import { App } from '@capacitor/app';
 import { registerStore, parseAmount, todayStr, BADGE_DEFS } from './store.js';
-import { tickGauge, sketchBars, categoryBars, squiggle, handCheck, inkBlot, depositStamp, streakSprout, streakScene } from './viz.js';
+import { tickGauge, sketchBars, categoryBars, squiggle, handCheck, inkBlot, depositStamp, streakRing } from './viz.js';
 import {
   isNative,
   initNativeBridge,
@@ -18,7 +18,8 @@ import {
   hapticSuccess,
   hapticCelebrate,
 } from './native-bridge.js';
-import { isLockAvailable, unlock as biometricUnlock } from './app-lock.js';
+import { AUTH_IDLE_THRESHOLD_MS, isLockAvailable, unlock as biometricUnlock } from './app-lock.js';
+import { createMonthlyReport, downloadMonthlyReport, nextMonth, previousMonth } from './monthly-reports.js';
 import {
   isCloudConfigured,
   initCloudSync,
@@ -30,11 +31,13 @@ import {
   hasRemoteData,
   pullState,
   pushState,
+  pushMonthlyReports,
   signInWithGoogle,
   onGoogleAuthRedirect,
   isAccountOwner,
   initiateDeposit,
   initiateWithdrawal,
+  emailMonthlyReport,
   getGoalMpesaBalance,
   refetchGoal,
   subscribeToRow,
@@ -52,6 +55,8 @@ window.Alpine = Alpine;
 registerStore(Alpine);
 
 const store = () => Alpine.store('sl');
+let monthlyReportCheckPromise = null;
+let monthlyReportCheckQueued = false;
 
 // hand-feel SVG snippets, available in every x-data scope
 Alpine.magic('squiggle', () => squiggle);
@@ -59,8 +64,7 @@ Alpine.magic('handCheck', () => handCheck);
 Alpine.magic('gauge', () => (ratio, opts) => tickGauge(ratio, opts));
 Alpine.magic('inkBlot', () => inkBlot);
 Alpine.magic('depositStamp', () => depositStamp);
-Alpine.magic('streakSprout', () => streakSprout);
-Alpine.magic('streakScene', () => streakScene);
+Alpine.magic('streakRing', () => streakRing);
 
 // Capacitor Haptics, available inline in templates the same way $toast is —
 // a no-op on non-native builds, same convention as everything native-bridge
@@ -219,6 +223,28 @@ Alpine.data('todayPage', () => ({
 
 Alpine.data('reportPage', () => ({
   expandedDate: null,
+  expandedReportMonth: null,
+
+  get monthlyReports() {
+    return [...store().monthlyReports].reverse();
+  },
+
+  isMonthlyReportExpanded(month) {
+    return this.expandedReportMonth === month;
+  },
+
+  toggleMonthlyReport(month) {
+    this.expandedReportMonth = this.expandedReportMonth === month ? null : month;
+  },
+
+  downloadMonthlyPdf(report) {
+    try {
+      downloadMonthlyReport(report);
+    } catch (error) {
+      console.error('Could not download monthly statement PDF:', error);
+      toast('Could not download the PDF');
+    }
+  },
 
   // Most recent closed day first — today itself isn't in history yet
   // (it's still open/editable), so this is genuinely "yesterday and
@@ -938,6 +964,7 @@ Alpine.store('auth', {
   async init() {
     if (!this.cloudConfigured) {
       this.stage = 'ready';
+      requestMonthlyReportCheck();
       return;
     }
     // Read before anything else awaits: on the web build, a completed Google
@@ -953,9 +980,11 @@ Alpine.store('auth', {
         await this.reconcile();
       } else {
         this.stage = 'ready';
+        requestMonthlyReportCheck();
       }
     } else {
       this.stage = 'phone';
+      requestMonthlyReportCheck();
     }
     onAuthStateChange((session) => {
       this.session = session;
@@ -1038,11 +1067,13 @@ Alpine.store('auth', {
     } else if (remoteHasData && !localData) {
       await this.pullNow();
       this.stage = 'ready';
+      requestMonthlyReportCheck();
       toast('Synced');
     } else if (!remoteHasData && localData) {
       this.stage = 'import';
     } else {
       this.stage = 'ready';
+      requestMonthlyReportCheck();
     }
   },
 
@@ -1068,6 +1099,7 @@ Alpine.store('auth', {
     await pushState(store());
     this.busy = false;
     this.stage = 'ready';
+    requestMonthlyReportCheck();
     toast('Imported');
   },
 
@@ -1076,6 +1108,7 @@ Alpine.store('auth', {
     await this.pullNow();
     this.busy = false;
     this.stage = 'ready';
+    requestMonthlyReportCheck();
     toast('Synced');
   },
 
@@ -1084,6 +1117,7 @@ Alpine.store('auth', {
     await pushState(store());
     this.busy = false;
     this.stage = 'ready';
+    requestMonthlyReportCheck();
     toast('Synced');
   },
 
@@ -1108,19 +1142,37 @@ const TOUR_STEPS = ['letter', 'today', 'goals', 'report', 'settings', 'groups'];
 
 Alpine.store('tour', {
   step: 0,
+  smsPermissionStatus: null,
+  notificationPermissionStatus: null,
 
   get current() {
     return TOUR_STEPS[this.step];
   },
 
-  // Triggered automatically the instant each step is reached, not behind a
-  // separate button the user has to go find later. Denied or granted, the
-  // tour continues normally either way — neither call here is awaited by
-  // anything that could block on it.
   next() {
     this.step++;
-    if (this.current === 'today') requestSmsPermission().catch(() => {});
-    if (this.current === 'settings') requestNotificationPermission().catch(() => {});
+  },
+
+  async askForSmsPermission() {
+    this.smsPermissionStatus = 'requesting';
+    try {
+      const permissions = await requestSmsPermission();
+      this.smsPermissionStatus = !isNative() ? 'unavailable' : permissions?.sms === 'granted' ? 'granted' : 'denied';
+    } catch (error) {
+      console.error('Could not request SMS permission during onboarding:', error);
+      this.smsPermissionStatus = 'unavailable';
+    }
+  },
+
+  async askForNotificationPermission() {
+    this.notificationPermissionStatus = 'requesting';
+    try {
+      const granted = await requestNotificationPermission();
+      this.notificationPermissionStatus = !isNative() ? 'unavailable' : granted ? 'granted' : 'denied';
+    } catch (error) {
+      console.error('Could not request notification permission during onboarding:', error);
+      this.notificationPermissionStatus = 'unavailable';
+    }
   },
 
   skip() {
@@ -1147,20 +1199,9 @@ Alpine.store('lock', {
   checking: true,
   available: true,
   error: '',
-  // Guards against a very real race: showing the OS biometric/PIN prompt
-  // briefly pauses the app, and that pause fires our own 'resume' listener
-  // again before the first prompt has finished -- without this guard, the
-  // second call starts a second check mid-attempt and the screen looks
-  // stuck locked even after a correct unlock. While true, check()/attempt()
-  // triggered by a resume are ignored rather than re-entered.
+  isAuthenticated: false,
+  _backgroundedAt: null,
   _verifying: false,
-  // CONFIRMED (on-device log): dismissing the native prompt itself fires
-  // a 'resume' event on this device even on a clean, correct unlock --
-  // not just when interrupted. Without this, that resume instantly
-  // re-triggers check() and re-locks the screen a moment after every
-  // success, looping forever. A resume landing within this window of a
-  // real success is ignored rather than treated as "app reopened".
-  _justUnlockedAt: 0,
 
   get enabled() {
     return store().settings.appLockEnabled;
@@ -1168,12 +1209,13 @@ Alpine.store('lock', {
 
   async check() {
     if (!this.native || !this.enabled) {
+      this.isAuthenticated = true;
       this.blocked = false;
       this.checking = false;
       return;
     }
+    if (this.isAuthenticated) return;
     if (this._verifying) return;
-    if (Date.now() - this._justUnlockedAt < 3000) return;
     this.checking = true;
     this.error = '';
     this.available = await isLockAvailable();
@@ -1182,6 +1224,7 @@ Alpine.store('lock', {
       // is nothing to enforce, so do not pretend to lock something that
       // can never be unlocked. Settings should steer the person to set a
       // device PIN if they want this feature.
+      this.isAuthenticated = true;
       this.blocked = false;
       this.checking = false;
       return;
@@ -1198,8 +1241,8 @@ Alpine.store('lock', {
     try {
       const result = await biometricUnlock();
       if (result.ok) {
+        this.isAuthenticated = true;
         this.blocked = false;
-        this._justUnlockedAt = Date.now();
       } else {
         this.error = 'Could not unlock (' + result.reason + '). Tap to try again.';
       }
@@ -1214,7 +1257,107 @@ Alpine.store('lock', {
 Alpine.start();
 initNativeBridge(store());
 initCloudSync(store());
+function requestMonthlyReportCheck() {
+  if (monthlyReportCheckPromise) {
+    monthlyReportCheckQueued = true;
+    return monthlyReportCheckPromise;
+  }
+  monthlyReportCheckPromise = (async () => {
+    do {
+      monthlyReportCheckQueued = false;
+      try {
+        await checkMonthlyReports();
+      } catch (error) {
+        console.error('Could not generate monthly reports:', error);
+      }
+    } while (monthlyReportCheckQueued);
+  })().finally(() => {
+    monthlyReportCheckPromise = null;
+  });
+  return monthlyReportCheckPromise;
+}
+
+async function checkMonthlyReports() {
+  const sl = store();
+  let session = null;
+  try {
+    session = await getSession();
+  } catch (error) {
+    console.error('Could not check the SaveLock account before generating monthly reports:', error);
+  }
+
+  const targetMonth = previousMonth();
+  const latestMonth = sl.monthlyReports.map((report) => report.month).sort().at(-1);
+  let month = latestMonth ? nextMonth(latestMonth) : targetMonth;
+  const created = [];
+  while (month <= targetMonth) {
+    if (!sl.monthlyReports.some((report) => report.month === month)) {
+      const report = await createMonthlyReport(
+        sl,
+        month,
+        {
+          name: session?.user?.user_metadata?.full_name || session?.user?.user_metadata?.name || '',
+          identity: session?.user?.email || (session?.user?.phone ? `+${session.user.phone}` : ''),
+        }
+      );
+      if (session?.user?.email) report.emailStatus = 'pending';
+      else if (session) report.emailStatus = 'no-email';
+      sl.monthlyReports.push(report);
+      created.push(report);
+    }
+    month = nextMonth(month);
+  }
+  if (!created.length) return;
+
+  sl.monthlyReports.sort((a, b) => a.month.localeCompare(b.month));
+  sl.persist();
+
+  if (session?.user?.email) {
+    const sync = await pushState(sl);
+    const reportSync = sync.error ? sync : await pushMonthlyReports(sl);
+    for (const report of created) {
+      if (reportSync.error) {
+        report.emailStatus = 'failed';
+        report.emailError = `Report is saved on this device, but email was not sent: ${reportSync.error}`;
+        continue;
+      }
+      try {
+        const result = await emailMonthlyReport(report);
+        if (result.error) {
+          report.emailStatus = 'failed';
+          report.emailError = result.error;
+        } else {
+          report.emailStatus = 'sent';
+          report.emailSentAt = result.sentAt;
+        }
+      } catch (error) {
+        console.error(`Could not email the ${report.month} monthly report:`, error);
+        report.emailStatus = 'failed';
+        report.emailError = 'Report is saved, but email delivery failed.';
+      }
+    }
+  }
+
+  sl.persist();
+  if (session) {
+    const sync = await pushState(sl);
+    if (sync.error) console.error('Could not sync monthly report history:', sync.error);
+    const reportSync = await pushMonthlyReports(sl);
+    if (reportSync.error) console.error('Could not sync monthly report history:', reportSync.error);
+  }
+}
 Alpine.store('lock').check();
-App.addListener('resume', () => {
-  Alpine.store('lock').check();
+App.addListener('appStateChange', ({ isActive }) => {
+  const lock = Alpine.store('lock');
+  if (!isActive) {
+    if (!lock._verifying) lock._backgroundedAt = Date.now();
+    return;
+  }
+  const backgroundedAt = lock._backgroundedAt;
+  lock._backgroundedAt = null;
+  if (backgroundedAt === null || Date.now() - backgroundedAt < AUTH_IDLE_THRESHOLD_MS) return;
+  lock.isAuthenticated = false;
+  lock.checking = true;
+  lock.blocked = lock.native && lock.enabled;
+  lock.check();
 }).catch(() => {});

@@ -12,6 +12,8 @@
 
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
+export const AUTH_IDLE_THRESHOLD_MS = 60_000;
+
 export const isNative = () => Capacitor.isNativePlatform();
 
 const NativeBiometric = registerPlugin('NativeBiometric');

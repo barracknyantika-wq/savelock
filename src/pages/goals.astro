@@ -1,6 +1,5 @@
 ---
 import Layout from '../layouts/Layout.astro';
-const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
 ---
 
 <Layout title="SaveLock: Goals" tab="goals">
@@ -29,6 +28,20 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
       <span x-html="$handCheck()"></span>
       <span x-text="milestoneBanner"></span>
     </p>
+
+    <section class="paper mb-5 flex items-center gap-4 p-4" aria-live="polite">
+      <div class="shrink-0" x-html="$streakRing($store.sl.savingsStreak.count, $store.sl.savingsStreakStatus)"></div>
+      <div class="min-w-0">
+        <h2 class="text-xs font-semibold uppercase tracking-[0.16em] text-ink-3">Savings streak</h2>
+        <p class="mt-1 font-display text-2xl font-semibold leading-none text-ink">
+          <span x-text="$store.sl.savingsStreak.count"></span>
+          <span class="text-sm font-medium" x-text="$store.sl.savingsStreak.count === 1 ? ' day' : ' days'"></span>
+        </p>
+        <p class="mt-1 text-sm font-medium"
+          :class="$store.sl.savingsStreakStatus === 'on-track' ? 'text-ochre-deep' : 'text-ink-3'"
+          x-text="$store.sl.savingsStreakStatus === 'on-track' ? 'Contribution logged today' : 'Add to a goal to extend your streak'"></p>
+      </div>
+    </section>
 
     <!-- Empty state -->
     <p
@@ -106,29 +119,14 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
             </div>
           </template>
 
-          <!-- Per goal streak: comparing two visual directions while one is
-               chosen (see settings for the developer only toggle). -->
-          <template x-if="$store.sl.settings.streakTreatment === 'hand'">
-            <div class="mt-3 flex items-center gap-2 border-t border-dashed border-paper-line pt-3">
-              <div class="h-10 w-10 shrink-0" aria-hidden="true" x-html="$streakScene(g.streak?.count || 0)"></div>
-              <p class="text-sm font-medium" :class="(g.streak?.count || 0) > 0 ? 'text-ochre-deep' : 'text-ink-3'">
-                <span x-text="g.streak?.count || 0"></span>
-                <span> day streak on this goal</span>
-              </p>
-            </div>
-          </template>
-          <template x-if="$store.sl.settings.streakTreatment === 'fire'">
-            <div
-              class="mt-3 flex items-center gap-3 rounded-2xl p-3"
-              style="background: linear-gradient(135deg, #ff8a3d 0%, #ff3d68 55%, #7c3aed 100%)"
-            >
-              <img src={`${base}/fire-streak.svg`} alt="" aria-hidden="true" class="h-8 w-8 shrink-0" />
-              <p class="font-display text-2xl font-extrabold leading-none text-white">
-                <span x-text="g.streak?.count || 0"></span>
-                <span class="ml-1 text-xs font-bold uppercase tracking-[0.16em] text-white/85">streak</span>
-              </p>
-            </div>
-          </template>
+          <div class="mt-3 flex items-center gap-2 border-t border-dashed border-paper-line pt-3">
+            <div class="h-10 w-10 shrink-0" aria-hidden="true"
+              x-html="$streakRing(g.streak?.count || 0, g.streak?.lastProgressDate === $store.sl.day.date ? 'on-track' : 'waiting')"></div>
+            <p class="text-sm font-medium text-ink-2">
+              <span x-text="g.streak?.count || 0"></span>
+              <span x-text="(g.streak?.count || 0) === 1 ? ' day on this goal' : ' days on this goal'"></span>
+            </p>
+          </div>
 
           <div class="mt-4 flex items-center justify-between gap-3 border-t border-dashed border-paper-line pt-3.5">
             <button

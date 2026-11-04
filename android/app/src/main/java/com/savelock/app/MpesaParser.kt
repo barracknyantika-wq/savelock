@@ -8,12 +8,12 @@ package com.savelock.app
  */
 data class MpesaTransaction(
     val mpesaCode: String,
-    // "spend" | "received" | "fuliza_repayment" | "fuliza_activation" | "fuliza_interest"
+    // "spend" | "received" | "loan_reminder" | Fuliza event types
     val type: String,
     val subtype: String,
     val amount: Double,
     val counterparty: String,
-    val category: String?, // null for anything but "spend"
+    val category: String?, // generic loan reminders use the internal-only category
     val balance: Double?,
     val receivedAt: Long,
     // Real spending, just covered by overdraft rather than balance — set

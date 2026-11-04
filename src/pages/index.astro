@@ -1,6 +1,5 @@
 ---
 import Layout from '../layouts/Layout.astro';
-const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
 ---
 
 <Layout title="SaveLock: Today" tab="today">
@@ -98,8 +97,8 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
           <p
             x-show="$store.sl.remaining < 0"
             x-cloak
-            class="mt-2 text-sm font-medium text-brick"
-            x-text="'⚠ ' + $store.sl.money(Math.abs($store.sl.remaining)) + ' over. Today ends the streak'"
+            class="mt-3 rounded-lg bg-brick/10 px-3 py-2 text-sm font-semibold text-brick"
+            x-text="`${$store.sl.money(Math.abs($store.sl.remaining))} over today's budget`"
           ></p>
 
           <!-- tick-mark arc gauge -->
@@ -121,71 +120,21 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
             </p>
           </div>
 
-          <!-- streak, hand-underlined when alive, with a small sprout that
-               visibly grows alongside the number, a second, quieter signal -->
-          <div class="mt-5 flex items-center justify-center gap-2 pb-1">
-            <div class="shrink-0" aria-hidden="true" x-html="$streakSprout($store.sl.streak.count)"></div>
-            <div class="flex flex-col items-center">
-              <p
-                class="text-sm font-medium"
-                :class="$store.sl.streak.count > 0 ? 'text-ochre-deep' : 'text-ink-3'"
-                x-text="$store.sl.streak.count > 0
-                  ? $store.sl.streak.count + ($store.sl.streak.count === 1 ? ' day' : ' days') + ' under budget'
-                  : 'No streak yet. End today at zero or better'"
-              ></p>
-              <span x-show="$store.sl.streak.count > 0" x-cloak x-html="$squiggle()"></span>
-            </div>
-          </div>
         </section>
 
-        <!-- Streak cards: bigger, more central treatment of the budget and
-             savings streaks, comparing two visual directions while one is
-             chosen (see settings for the developer only toggle). The small
-             sprout above stays exactly as it was, this is additional, not a
-             replacement of it. -->
-        <div class="mt-4 grid grid-cols-2 gap-3">
-          <template x-if="$store.sl.settings.streakTreatment === 'hand'">
-            <section class="paper relative z-0 rotate-[-0.5deg] p-4 text-center">
-              <h2 class="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-3">Budget streak</h2>
-              <div class="mx-auto -mt-1 w-32" x-html="$streakScene($store.sl.streak.count)"></div>
-              <p class="-mt-2 text-sm font-medium" :class="$store.sl.streak.count > 0 ? 'text-ochre-deep' : 'text-ink-3'">
-                <span x-text="$store.sl.streak.count"></span>
-                <span x-text="$store.sl.streak.count === 1 ? ' day under budget' : ' days under budget'"></span>
-              </p>
-            </section>
-          </template>
-          <template x-if="$store.sl.settings.streakTreatment === 'fire'">
-            <section
-              class="relative overflow-hidden rounded-3xl p-4 text-center shadow-[0_10px_26px_-10px_rgba(0,0,0,0.55)]"
-              style="background: linear-gradient(135deg, #ff8a3d 0%, #ff3d68 55%, #7c3aed 100%)"
-            >
-              <img src={`${base}/fire-streak.svg`} alt="" aria-hidden="true" class="mx-auto h-12 w-12" />
-              <p class="mt-0.5 font-display text-4xl font-extrabold leading-none text-white" x-text="$store.sl.streak.count"></p>
-              <p class="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-white/85">Budget streak</p>
-            </section>
-          </template>
-
-          <template x-if="$store.sl.settings.streakTreatment === 'hand'">
-            <section class="paper relative z-0 rotate-[0.5deg] p-4 text-center">
-              <h2 class="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-3">Savings streak</h2>
-              <div class="mx-auto -mt-1 w-32" x-html="$streakScene($store.sl.savingsStreak.count)"></div>
-              <p class="-mt-2 text-sm font-medium" :class="$store.sl.savingsStreak.count > 0 ? 'text-ochre-deep' : 'text-ink-3'">
-                <span x-text="$store.sl.savingsStreak.count"></span>
-                <span x-text="$store.sl.savingsStreak.count === 1 ? ' day saving toward a goal' : ' days saving toward a goal'"></span>
-              </p>
-            </section>
-          </template>
-          <template x-if="$store.sl.settings.streakTreatment === 'fire'">
-            <section
-              class="relative overflow-hidden rounded-3xl p-4 text-center shadow-[0_10px_26px_-10px_rgba(0,0,0,0.55)]"
-              style="background: linear-gradient(135deg, #ff8a3d 0%, #ff3d68 55%, #7c3aed 100%)"
-            >
-              <img src={`${base}/fire-streak.svg`} alt="" aria-hidden="true" class="mx-auto h-12 w-12" />
-              <p class="mt-0.5 font-display text-4xl font-extrabold leading-none text-white" x-text="$store.sl.savingsStreak.count"></p>
-              <p class="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-white/85">Savings streak</p>
-            </section>
-          </template>
-        </div>
+        <section class="paper relative mt-4 flex items-center gap-4 p-4" aria-live="polite">
+          <div class="shrink-0" x-html="$streakRing($store.sl.streak.count, $store.sl.budgetStreakStatus)"></div>
+          <div class="min-w-0">
+            <h2 class="text-xs font-semibold uppercase tracking-[0.16em] text-ink-3">Budget streak</h2>
+            <p class="mt-1 font-display text-2xl font-semibold leading-none text-ink">
+              <span x-text="$store.sl.streak.count"></span>
+              <span class="text-sm font-medium" x-text="$store.sl.streak.count === 1 ? ' day' : ' days'"></span>
+            </p>
+            <p class="mt-1 text-sm font-medium"
+              :class="$store.sl.budgetStreakStatus === 'broken' ? 'text-brick' : $store.sl.budgetStreakStatus === 'on-track' ? 'text-ochre-deep' : 'text-ink-3'"
+              x-text="$store.sl.budgetStreakStatus === 'broken' ? 'Over budget today' : $store.sl.budgetStreakStatus === 'on-track' ? 'On track today' : 'Set a daily limit to begin'"></p>
+          </div>
+        </section>
 
         <!-- Log a spend: overlaps the hero's bottom edge, offset right -->
         <section class="paper relative z-20 -mt-3 ml-4 rotate-[0.8deg] p-5">

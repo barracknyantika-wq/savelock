@@ -244,7 +244,44 @@ sheet automatically once a callback lands was verified only up to the point
 Supabase's client library takes over, actually watching a live callback
 arrive over that connection needs a real project to test.
 
-## 8. Try it
+## 8. Monthly statements (optional email delivery)
+
+Monthly statements are generated locally when the app opens after a month
+has closed. The first statement is for the most recently closed month;
+thereafter, months after the latest saved statement are generated on the next
+open. Statements include the device's classified income and expenses, goal
+contribution history, and closed-day budget history, then persist as a saved
+PDF and statement snapshot. Local-only users do not need Supabase, and their
+reports are never sent to an email service.
+
+The app's synced data does not contain complete income and savings-event
+history, so a scheduled Edge Function would produce incomplete statements.
+Generation therefore uses the app-open month-boundary check; any later
+months missed while the app was closed are generated on the next open from
+the history available on that device. Existing device logs are capped, so
+older months may not contain complete transaction detail.
+
+For account sync and email delivery:
+
+1. Run [`0010_monthly_reports.sql`](./supabase/migrations/0010_monthly_reports.sql)
+   after the other schema migrations.
+2. Deploy the authenticated email function:
+
+   ```
+   supabase functions deploy send-monthly-report
+   ```
+
+3. Configure `RESEND_API_KEY` and `MONTHLY_REPORTS_FROM` under
+   **Project Settings → Edge Functions → Secrets**. The sender address must
+   be verified with Resend. The function only sends to the email address
+   returned for the signed-in Supabase user. If the project has no email
+   provider configured, the PDF and report remain saved in the app and the
+   report history shows the delivery error.
+
+The report history is synced to `monthly_reports` for Supabase accounts;
+local-only statement data stays in the app's local backup/store.
+
+## 9. Try it
 
 Open the app, go to **Settings → Account & sync**, and sign in either way:
 - **Phone**: enter a real phone number, confirm the OTP arrives and signs

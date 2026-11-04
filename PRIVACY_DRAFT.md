@@ -3,8 +3,8 @@
 This is a starting draft to speed up getting a real privacy policy and terms
 of use written — it is **not** a substitute for review by an actual lawyer,
 and should not be published or relied on as-is. It describes what the code
-in this repository actually does today, as of the accounts/cloud-sync
-feature, so nothing here is aspirational or hypothetical.
+in this repository actually does today, including optional cloud sync and
+monthly statements, so nothing here is aspirational or hypothetical.
 
 ---
 
@@ -31,21 +31,32 @@ signed in:
 
 | Data | Why it's collected |
 |---|---|
-| Phone number | The only thing used to identify your account and sign you back in on another device. No email, name, or other identity information is requested. |
+| Phone number, email address, and display name (depending on sign-in method and provider data) | Account sign-in and the account identity shown in the app. Phone sign-in may also collect the name entered at signup; Google sign-in can provide an email and display name. |
 | Daily allowance / spending limit | Core app function — this is what the app is scoring you against. |
-| Individual spends (amount, category, note, timestamp, whether via M-Pesa auto-detect or Fuliza overdraft) | Core app function — the actual budget-tracking data. |
+| Individual spends and income (amount, category, description/counterparty, timestamp, whether via supported SMS auto-detect or Fuliza overdraft) | Core app function — the actual budget-tracking data. |
 | Goals (name, target, saved amount, target date, history) | Core app function. |
 | Streak count, badges earned, weekly challenge progress | Engagement features built on top of the same budget data — nothing new is collected for these, they're computed from the above. |
 | Notification/reminder preferences | So they can follow you across devices too. |
+| Monthly statement snapshots (transactions, totals, categories, streak performance, report period, and available account name/identity) | Saved report history and account sync. Each snapshot includes its generated PDF. |
 
-Nothing else is collected: no location, no contacts, no device identifiers,
-no advertising ID, no analytics/tracking pixels, no browsing history.
+The app does not collect location, contacts, device identifiers, advertising
+IDs, analytics/tracking pixels, or browsing history.
 
-On Android with SMS auto-detect enabled, the app reads only M-Pesa
-confirmation texts (matched by sender ID) to extract the transaction it
-already parses — it does not read, store, or transmit any other SMS content,
-and the raw SMS text itself is never sent to the server; only the
-already-parsed transaction (amount, category, counterparty name, etc.) is.
+On Android with SMS auto-detect enabled, the app processes supported
+transaction messages from M-Pesa, bank, and lending sender categories to
+extract transaction details. The always-on auto-detect path does not read
+the inbox or store the raw message body; only parsed transaction details
+are retained. A separate, explicitly enabled reconciliation setting can
+read recent M-Pesa inbox messages to check for missed transactions, but raw
+SMS text is not retained or transmitted. Recognized loan reminders are kept
+in a separate local-only internal list and are excluded from totals and
+reports.
+
+If monthly report email delivery is configured for a Supabase deployment,
+the authenticated Edge Function sends the generated PDF only to the email
+address on the signed-in account. The email provider receives that address
+and statement attachment to deliver the requested message. Local-only
+reports are not emailed.
 
 ## Who can see it
 
@@ -64,6 +75,9 @@ already-parsed transaction (amount, category, counterparty name, etc.) is.
 - **Supabase** (the hosting provider) processes this data on your behalf as
   infrastructure — see [Supabase's own privacy policy](https://supabase.com/privacy)
   and data processing terms for what they do with data they host.
+- **Resend**, if configured for monthly report delivery, processes the
+  account email address and statement PDF to send that email — see
+  [Resend's privacy policy](https://resend.com/legal/privacy-policy).
 - **Whichever SMS/OTP provider is configured** for phone sign-in (e.g.
   Twilio) receives the phone number to send the code, and that provider's
   own privacy policy applies to that specific transaction.

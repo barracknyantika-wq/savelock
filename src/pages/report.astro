@@ -9,6 +9,124 @@ import Layout from '../layouts/Layout.astro';
       <p class="mt-1 text-sm font-light text-cream-2">Yesterday, and every day before it.</p>
     </header>
 
+    <section class="mb-10" aria-labelledby="monthly-statements-heading">
+      <div class="mb-4 px-1">
+        <h2 id="monthly-statements-heading" class="font-display text-lg font-semibold tracking-tight text-cream">Monthly statements</h2>
+        <p class="mt-1 text-sm font-light text-cream-2">Saved snapshots of your income, spending, and streaks.</p>
+      </div>
+
+      <p
+        x-show="!monthlyReports.length"
+        x-cloak
+        class="rounded-2xl border border-dashed border-charcoal-2 px-5 py-5 text-center text-sm leading-relaxed text-cream-2"
+      >
+        Your first statement is created after the month closes.
+      </p>
+
+      <div class="space-y-4">
+        <template x-for="(report, i) in monthlyReports" :key="report.month">
+          <article class="paper p-5" :class="i % 2 === 0 ? 'rotate-[-0.4deg]' : 'rotate-[0.4deg]'">
+            <button
+              type="button"
+              class="flex w-full items-center justify-between gap-3 text-left"
+              :aria-expanded="isMonthlyReportExpanded(report.month)"
+              @click="toggleMonthlyReport(report.month)"
+            >
+              <span class="min-w-0">
+                <span
+                  class="block font-display text-lg font-semibold tracking-tight text-ink"
+                  x-text="new Date(report.periodStart + 'T00:00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })"
+                ></span>
+                <span class="mt-1 block text-xs font-light text-ink-3" x-text="report.userName || report.userIdentity || 'SaveLock statement'"></span>
+              </span>
+              <span class="shrink-0 text-sm font-semibold text-ink-2" x-text="isMonthlyReportExpanded(report.month) ? 'Close' : 'View'"></span>
+            </button>
+
+            <div class="mt-4 grid grid-cols-3 gap-2 border-y border-dashed border-paper-line py-3 text-xs">
+              <div>
+                <p class="text-ink-3">Income</p>
+                <p class="mt-1 font-semibold text-ink" x-text="$store.sl.money(report.summary.income)"></p>
+              </div>
+              <div>
+                <p class="text-ink-3">Expenses</p>
+                <p class="mt-1 font-semibold text-ink" x-text="$store.sl.money(report.summary.expenses)"></p>
+              </div>
+              <div>
+                <p class="text-ink-3">Net savings</p>
+                <p class="mt-1 font-semibold text-ink" x-text="$store.sl.money(report.summary.netSavings)"></p>
+              </div>
+            </div>
+
+            <template x-if="isMonthlyReportExpanded(report.month)">
+              <div class="mt-4 space-y-4">
+                <div class="grid grid-cols-2 gap-3 text-xs text-ink-2">
+                  <p>
+                    <span class="font-semibold text-ink">Budget streak</span><br>
+                    <span x-text="`${report.streaks.budget.daysOnTrack}/${report.streaks.budget.daysMeasured} measured days; longest ${report.streaks.budget.longestRun} days`"></span>
+                  </p>
+                  <p>
+                    <span class="font-semibold text-ink">Savings streak</span><br>
+                    <span x-text="`${report.streaks.savings.daysOnTrack} contribution days; longest ${report.streaks.savings.longestRun} days`"></span>
+                  </p>
+                </div>
+
+                <div>
+                  <h3 class="text-xs font-bold uppercase tracking-wide text-ink-3">Category breakdown</h3>
+                  <p x-show="!report.summary.categoryBreakdown.length" class="mt-2 text-sm text-ink-3">No classified expenses.</p>
+                  <ul class="mt-2 space-y-1">
+                    <template x-for="category in report.summary.categoryBreakdown" :key="category.category">
+                      <li class="flex justify-between gap-3 text-sm text-ink-2">
+                        <span x-text="category.category"></span>
+                        <span class="font-semibold tabular-nums text-ink" x-text="$store.sl.money(category.total)"></span>
+                      </li>
+                    </template>
+                  </ul>
+                </div>
+
+                <div>
+                  <h3 class="text-xs font-bold uppercase tracking-wide text-ink-3">Transactions</h3>
+                  <p x-show="!report.transactions.length" class="mt-2 text-sm text-ink-3">No classified transactions.</p>
+                  <ul class="mt-2 max-h-72 space-y-2 overflow-y-auto">
+                    <template x-for="(item, index) in report.transactions" :key="`${report.month}-${index}`">
+                      <li class="flex items-start justify-between gap-3 border-b border-paper-line/70 pb-2 text-sm">
+                        <span class="min-w-0">
+                          <span class="block truncate font-medium text-ink" x-text="item.description"></span>
+                          <span class="text-xs text-ink-3" x-text="`${item.date} · ${item.category} · ${item.direction}`"></span>
+                        </span>
+                        <span class="shrink-0 font-semibold tabular-nums text-ink" x-text="$store.sl.money(item.amount)"></span>
+                      </li>
+                    </template>
+                  </ul>
+                </div>
+
+                <p
+                  x-show="report.emailStatus === 'failed'"
+                  class="rounded-lg bg-brick/10 px-3 py-2 text-xs text-brick"
+                  x-text="report.emailError || 'Email delivery failed. The statement remains saved on this device.'"
+                ></p>
+                <p
+                  x-show="report.emailStatus === 'sent'"
+                  class="text-xs text-ink-3"
+                >PDF emailed to the account address.</p>
+                <p
+                  x-show="report.emailStatus === 'no-email'"
+                  class="text-xs text-ink-3"
+                >No email address is associated with this account; the statement is saved here.</p>
+              </div>
+            </template>
+
+            <button
+              type="button"
+              class="pressable mt-4 min-h-10 rounded-lg border border-paper-line px-3 text-sm font-semibold text-ink"
+              @click="downloadMonthlyPdf(report)"
+            >
+              Download PDF
+            </button>
+          </article>
+        </template>
+      </div>
+    </section>
+
     <!-- Empty state -->
     <p
       x-show="!pastDays.length"

@@ -268,7 +268,7 @@ export async function checkSmsPermission() {
 export async function requestSmsPermission() {
   if (!isNative()) return null;
   try {
-    return await SmsMpesa.requestPermissions();
+    return await SmsMpesa.requestPermissions({ permissions: ['sms'] });
   } catch {
     return null;
   }

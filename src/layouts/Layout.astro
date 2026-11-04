@@ -307,15 +307,60 @@ const tabs = [
                 a tap, or let SaveLock catch it the moment an M Pesa message arrives.
               </p>
               <p class="mt-3 text-sm font-light leading-relaxed text-ink-2">
-                That needs permission to read SMS messages on this device, so a spend can be caught
-                without you lifting a finger. Nothing ever leaves your phone.
+                This needs permission to receive transaction SMS messages on this device, so a spend
+                can be caught without you lifting a finger. Nothing ever leaves your phone.
+              </p>
+              <p
+                x-show="$store.tour.smsPermissionStatus === 'requesting'"
+                role="status"
+                class="mt-4 text-sm text-ink-2"
+              >
+                Waiting for the SMS permission response…
+              </p>
+              <p
+                x-show="$store.tour.smsPermissionStatus === 'granted'"
+                role="status"
+                class="mt-4 rounded-lg bg-ochre/15 px-3 py-2 text-sm text-ink"
+              >
+                SMS access granted. SaveLock can now detect supported transaction messages.
+              </p>
+              <p
+                x-show="$store.tour.smsPermissionStatus === 'denied'"
+                role="status"
+                class="mt-4 rounded-lg bg-brick/10 px-3 py-2 text-sm text-brick"
+              >
+                SMS access was not granted. Automatic transaction detection stays off until you enable it in settings.
+              </p>
+              <p
+                x-show="$store.tour.smsPermissionStatus === 'unavailable'"
+                role="status"
+                class="mt-4 text-sm text-ink-2"
+              >
+                The SMS system prompt is available on Android. You can continue and enable it later from settings.
               </p>
               <button
+                x-show="$store.tour.smsPermissionStatus === null"
+                type="button"
+                @click="$store.tour.askForSmsPermission()"
+                class="pressable mt-6 min-h-12 w-full rounded-xl border border-paper-line font-semibold text-ink"
+              >
+                Request SMS access
+              </button>
+              <button
+                x-show="$store.tour.smsPermissionStatus !== null && $store.tour.smsPermissionStatus !== 'requesting'"
                 type="button"
                 @click="$store.tour.next()"
-                class="pressable mt-6 min-h-12 w-full rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"
+                class="pressable mt-3 min-h-12 w-full rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"
               >
                 Continue
+              </button>
+              <button
+                x-show="$store.tour.smsPermissionStatus === 'requesting'"
+                type="button"
+                disabled
+                class="mt-3 min-h-12 w-full rounded-xl bg-ochre/50 font-semibold text-ink"
+              >
+                Waiting…
               </button>
             </section>
           </template>
@@ -363,9 +408,47 @@ const tabs = [
                 reminder if a nudge helps.
               </p>
               <p class="mt-3 text-sm font-light leading-relaxed text-ink-2">
-                Reminders need permission to send notifications. You can turn them off again any time.
+                SaveLock needs notification permission to alert you about detected spending and optional reminders.
+                You can change notification settings any time.
               </p>
               <button
+                x-show="$store.tour.notificationPermissionStatus === null"
+                type="button"
+                @click="$store.tour.askForNotificationPermission()"
+                class="pressable mt-6 min-h-12 w-full rounded-xl border border-paper-line font-semibold text-ink"
+              >
+                Request notification access
+              </button>
+              <p
+                x-show="$store.tour.notificationPermissionStatus === 'requesting'"
+                role="status"
+                class="mt-4 text-sm text-ink-2"
+              >
+                Waiting for the notification permission response…
+              </p>
+              <p
+                x-show="$store.tour.notificationPermissionStatus === 'granted'"
+                role="status"
+                class="mt-4 rounded-lg bg-ochre/15 px-3 py-2 text-sm text-ink"
+              >
+                Notifications are enabled for SaveLock.
+              </p>
+              <p
+                x-show="$store.tour.notificationPermissionStatus === 'denied'"
+                role="status"
+                class="mt-4 rounded-lg bg-brick/10 px-3 py-2 text-sm text-brick"
+              >
+                Notifications were not enabled. You can allow them later in your device settings.
+              </p>
+              <p
+                x-show="$store.tour.notificationPermissionStatus === 'unavailable'"
+                role="status"
+                class="mt-4 text-sm text-ink-2"
+              >
+                The notification system prompt is available on Android. You can continue without enabling it.
+              </p>
+              <button
+                x-show="$store.tour.notificationPermissionStatus !== null && $store.tour.notificationPermissionStatus !== 'requesting'"
                 type="button"
                 @click="$store.tour.next()"
                 class="pressable mt-6 min-h-12 w-full rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"

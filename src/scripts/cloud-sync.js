@@ -238,6 +238,10 @@ function rowToGoal(r) {
   };
 }
 
+function reportFromRow(r) {
+  return r.email_sent_at ? { ...r.report, emailStatus: 'sent', emailSentAt: r.email_sent_at } : r.report;
+}
+
 function settingsToRow(userId, settings, streakCount) {
   return {
     user_id: userId,
@@ -378,6 +382,21 @@ export async function pushState(store) {
   return { error: null };
 }
 
+export async function pushMonthlyReports(store) {
+  const c = client();
+  if (!c || !store.monthlyReports.length) return { error: null };
+  const session = await getSession();
+  if (!session) return { error: null };
+  const rows = store.monthlyReports.map((report) => ({
+    user_id: session.user.id,
+    month: report.month,
+    report,
+    email_sent_at: report.emailStatus === 'sent' ? report.emailSentAt || null : null,
+  }));
+  const { error } = await c.from('monthly_reports').upsert(rows, { onConflict: 'user_id,month' });
+  return { error: error?.message || null };
+}
+
 // ---- pull: does this account already have data on the server? ------------
 
 export async function hasRemoteData(userId) {
@@ -402,7 +421,7 @@ export async function pullState() {
   if (!session) return null;
   const userId = session.user.id;
 
-  const [{ data: settingsRow }, { data: goalRows }, { data: spendRows }, { data: dailyRows }, { data: badgeRows }, { data: challengeRows_ }, { data: fulizaRows }] =
+  const [{ data: settingsRow }, { data: goalRows }, { data: spendRows }, { data: dailyRows }, { data: badgeRows }, { data: challengeRows_ }, { data: fulizaRows }, { data: reportRows }] =
     await Promise.all([
       c.from('settings').select('*').eq('user_id', userId).maybeSingle(),
       c.from('goals').select('*').eq('user_id', userId),
@@ -411,6 +430,7 @@ export async function pullState() {
       c.from('badges').select('*').eq('user_id', userId),
       c.from('challenges').select('*').eq('user_id', userId),
       c.from('fuliza_events').select('*').eq('user_id', userId),
+      c.from('monthly_reports').select('report,email_sent_at').eq('user_id', userId).order('month', { ascending: true }),
     ]);
 
   const todayDate = dateOfMs(Date.now());
@@ -439,6 +459,7 @@ export async function pullState() {
         savedAmount: r.saved_amount != null ? Number(r.saved_amount) : 0,
       })),
     fulizaEvents: (fulizaRows || []).map((r) => ({ id: r.id, type: r.type, amount: Number(r.amount), at: new Date(r.at).getTime(), mpesaCode: r.mpesa_code })),
+    monthlyReports: (reportRows || []).map(reportFromRow),
   };
 }
 
@@ -473,6 +494,15 @@ export async function initiateDeposit(goalId, amount, phoneNumber) {
 
 export async function initiateWithdrawal(goalId, amount, phoneNumber) {
   return invokeFunction('initiate-b2c-withdrawal', { goal_id: goalId, amount, phone_number: phoneNumber });
+}
+
+export async function emailMonthlyReport(report) {
+  const result = await invokeFunction('send-monthly-report', {
+    month: report.month,
+    pdf_base64: report.pdfBase64,
+  });
+  if (result.error) return { error: result.error };
+  return { error: null, sentAt: result.sent_at || new Date().toISOString() };
 }
 
 // Gates the Withdraw button. Deposits stay open to everyone; this feature

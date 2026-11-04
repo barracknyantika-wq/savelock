@@ -87,12 +87,6 @@ function defaultState() {
       // ever enforced when the device can actually satisfy it -- a phone
       // with no fingerprint/face/PIN set up is never silently locked out.
       appLockEnabled: true,
-      // Temporary, developer only: which visual treatment the streak cards
-      // use, 'hand' (sketched, extends the existing sprout) or 'fire' (a
-      // bright gamified card built around public/fire-streak.svg), so both
-      // can be compared on the same device before picking one. Remove this
-      // setting once a direction is chosen, it is not meant to ship.
-      streakTreatment: 'hand',
     },
     day: { date: todayStr(), spends: [] },
     streak: { count: 0 },
@@ -113,6 +107,9 @@ function defaultState() {
     // streak -- its own ledger, one flat capped list, not split
     // today/history since income has no day-boundary concept to roll over.
     incomeLog: [],
+    // Lending reminders are retained for a future opt-in view, but never
+    // participate in spending, income, streaks, or notifications.
+    loanReminders: [],
     goals: [],
     breaks: [],
     // Date string of the last reconciliation check, so it only runs once
@@ -131,6 +128,7 @@ function defaultState() {
     // flag the app has ever surfaced, newest first, capped. Read/unread
     // state lives on each entry; tapping one in the UI marks it read.
     notifications: [],
+    monthlyReports: [],
     // ---- engagement: badges + optional weekly challenge ----------------
     badges: [],
     stats: { longestStreak: 0, longestSavingsStreak: 0, biggestSingleDaySave: 0, biggestSingleDaySaveDate: null },
@@ -157,11 +155,13 @@ function load() {
       history: Array.isArray(saved.history) ? saved.history : [],
       spendLog: Array.isArray(saved.spendLog) ? saved.spendLog : [],
       incomeLog: Array.isArray(saved.incomeLog) ? saved.incomeLog : [],
+      loanReminders: Array.isArray(saved.loanReminders) ? saved.loanReminders : [],
       goals: Array.isArray(saved.goals) ? saved.goals : [],
       breaks: Array.isArray(saved.breaks) ? saved.breaks : [],
       processedMpesaCodes: Array.isArray(saved.processedMpesaCodes) ? saved.processedMpesaCodes : [],
       fulizaEvents: Array.isArray(saved.fulizaEvents) ? saved.fulizaEvents : [],
       notifications: Array.isArray(saved.notifications) ? saved.notifications : [],
+      monthlyReports: Array.isArray(saved.monthlyReports) ? saved.monthlyReports : [],
       badges: Array.isArray(saved.badges) ? saved.badges : [],
       stats: { ...base.stats, ...(saved.stats || {}) },
       challenge: saved.challenge && saved.challenge.startDate ? saved.challenge : null,
@@ -203,14 +203,14 @@ export function registerStore(Alpine) {
 
     persist() {
       const {
-        version, settings, day, streak, savingsStreak, history, spendLog, incomeLog, goals, breaks, processedMpesaCodes,
-        fulizaEvents, notifications, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
+        version, settings, day, streak, savingsStreak, history, spendLog, incomeLog, loanReminders, goals, breaks, processedMpesaCodes,
+        fulizaEvents, notifications, monthlyReports, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
       } = this;
       localStorage.setItem(
         KEY,
         JSON.stringify({
-          version, settings, day, streak, savingsStreak, history, spendLog, incomeLog, goals, breaks, processedMpesaCodes,
-          fulizaEvents, notifications, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
+          version, settings, day, streak, savingsStreak, history, spendLog, incomeLog, loanReminders, goals, breaks, processedMpesaCodes,
+          fulizaEvents, notifications, monthlyReports, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
         })
       );
       window.dispatchEvent(new CustomEvent('savelock:persist'));
@@ -247,7 +247,8 @@ export function registerStore(Alpine) {
           this.spendLog.push(...spends);
         }
         if (limit > 0) {
-          const spent = spends.reduce((s, x) => s + x.amount, 0);
+          const spent = spends.filter((x) => x.classification !== 'savings-transfer' && x.classification !== 'loan_reminder')
+            .reduce((s, x) => s + x.amount, 0);
           this.streak.count = spent <= limit ? this.streak.count + 1 : 0;
           this.history.push({ date, limit, spent });
           if (this.history.length > HISTORY_CAP) {
@@ -378,7 +379,18 @@ export function registerStore(Alpine) {
     },
 
     get spentToday() {
-      return this.day.spends.reduce((s, x) => s + x.amount, 0);
+      return this.day.spends
+        .filter((x) => x.classification !== 'savings-transfer' && x.classification !== 'loan_reminder')
+        .reduce((s, x) => s + x.amount, 0);
+    },
+
+    get budgetStreakStatus() {
+      if (!this.hasLimit) return 'inactive';
+      return this.spentToday > this.settings.dailyLimit ? 'broken' : 'on-track';
+    },
+
+    get savingsStreakStatus() {
+      return this.savingsStreak.lastProgressDate === todayStr() ? 'on-track' : 'waiting';
     },
 
     get remaining() {
@@ -469,13 +481,6 @@ export function registerStore(Alpine) {
 
     setWeeklySummary(enabled) {
       this.settings.weeklySummaryEnabled = !!enabled;
-      this.persist();
-    },
-
-    // Temporary, developer only toggle, see the comment on the setting
-    // itself in defaultState() above.
-    setStreakTreatment(v) {
-      this.settings.streakTreatment = v === 'fire' ? 'fire' : 'hand';
       this.persist();
     },
 
@@ -582,7 +587,9 @@ export function registerStore(Alpine) {
     // highest spend first.
     categoryBreakdown(days) {
       const cutoff = Date.now() - days * 86400000;
-      const all = [...this.spendLog, ...this.day.spends].filter((s) => s.at >= cutoff);
+      const all = [...this.spendLog, ...this.day.spends].filter(
+        (s) => s.at >= cutoff && s.classification !== 'savings-transfer' && s.classification !== 'loan_reminder'
+      );
       const totals = {};
       let grandTotal = 0;
       for (const s of all) {
@@ -643,6 +650,20 @@ export function registerStore(Alpine) {
       this.processedMpesaCodes.push(tx.mpesaCode);
       if (this.processedMpesaCodes.length > 300) {
         this.processedMpesaCodes = this.processedMpesaCodes.slice(-300);
+      }
+      if (tx.type === 'loan_reminder' || tx.classification === 'loan_reminder') {
+        this.loanReminders.push({
+          id: uid(),
+          amount: Number(tx.amount) || 0,
+          note: tx.counterparty || '',
+          category: 'loan_reminder',
+          at: tx.receivedAt || Date.now(),
+          source: 'sms',
+          mpesaCode: tx.mpesaCode,
+        });
+        if (this.loanReminders.length > 200) this.loanReminders = this.loanReminders.slice(-200);
+        this.persist();
+        return null;
       }
       if (tx.type === 'fuliza_repayment' || tx.type === 'fuliza_activation' || tx.type === 'fuliza_interest') {
         // Fuliza clearing/servicing a past debt, not a new expense — tracked
@@ -938,7 +959,7 @@ export function registerStore(Alpine) {
     exportData() {
       const {
         version, settings, day, streak, savingsStreak, history, spendLog, incomeLog, goals, breaks, processedMpesaCodes,
-        fulizaEvents, notifications, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
+        fulizaEvents, notifications, monthlyReports, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
       } = this;
       return JSON.stringify(
         {
@@ -947,7 +968,7 @@ export function registerStore(Alpine) {
           exportedAt: new Date().toISOString(),
           data: {
             version, settings, day, streak, savingsStreak, history, spendLog, incomeLog, goals, breaks, processedMpesaCodes,
-            fulizaEvents, notifications, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
+            fulizaEvents, notifications, monthlyReports, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
           },
         },
         null,

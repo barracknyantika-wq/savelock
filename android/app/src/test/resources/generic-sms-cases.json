@@ -1,0 +1,23 @@
+[
+  {
+    "name": "Equity Bank credit",
+    "sender": "EQUITYBANK",
+    "body": "Your transaction of Kshs 12,500.00 has been credited to your account ending 1234.",
+    "type": "received",
+    "amount": 12500
+  },
+  {
+    "name": "Equity Bank completed send",
+    "sender": "EQUITYBANK",
+    "body": "KES 1,250.00 has been successfully sent to Naivas Supermarket.",
+    "type": "spend",
+    "amount": 1250
+  },
+  {
+    "name": "KORO-REPAY loan reminder",
+    "sender": "KORO-REPAY",
+    "body": "We have not yet received payment on your loan. Please repay Ksh 500 to avoid late charges.",
+    "type": "loan_reminder",
+    "amount": 500
+  }
+]

@@ -276,3 +276,20 @@ export function streakScene(count) {
 
   return `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true" style="width:100%;height:auto;display:block">${out}</svg>`;
 }
+
+export function streakRing(count, status = 'inactive') {
+  const value = Math.max(0, Math.floor(Number(count) || 0));
+  const radius = 27;
+  const circumference = 2 * Math.PI * radius;
+  const progress = value === 0 ? 0 : (value % 7 === 0 ? 1 : (value % 7) / 7);
+  const color = status === 'broken' ? '#b4452f' : value > 0 ? '#c9922e' : '#8b8579';
+  const offset = circumference * (1 - progress);
+  return `<svg viewBox="0 0 64 64" aria-hidden="true" style="width:4rem;height:4rem;display:block">
+    <circle cx="32" cy="32" r="${radius}" fill="none" stroke="#ded5c5" stroke-width="4"/>
+    <circle cx="32" cy="32" r="${radius}" fill="none" stroke="${color}" stroke-width="4" stroke-linecap="round"
+      stroke-dasharray="${circumference.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}"
+      transform="rotate(-90 32 32)"/>
+    <text x="32" y="37" text-anchor="middle" fill="#29251f" font-family="system-ui,sans-serif"
+      font-size="${value > 99 ? 15 : 19}" font-weight="700">${value}</text>
+  </svg>`;
+}

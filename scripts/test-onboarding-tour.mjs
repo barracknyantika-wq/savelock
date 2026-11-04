@@ -12,9 +12,9 @@
 //    that already saw it, through the real code path, not a
 //    reimplementation of the logic.
 // 2. The tour's own step mechanics (skip from any step, next() walking
-//    through in order, finish() resetting state, the two permission
-//    triggers firing at exactly the right steps and never blocking if
-//    denied) — these need no network at all, so they're driven directly
+//    through in order, finish() resetting state, and the awaited permission
+//    prompts resolving into clear states before the user continues — these
+//    need no network at all, so they're driven directly
 //    against the real $store.tour.
 //
 // Requires a running preview server built WITH Supabase env vars set
@@ -97,7 +97,7 @@ async function mockedPage(tourSeenValue) {
   await page.close();
 }
 
-// ---- tour step mechanics: walking through in the right order -------------
+// ---- tour step mechanics: permissions resolve before continuing ----------
 {
   const page = await mockedPage(false);
   const steps = await page.evaluate(async () => {
@@ -107,6 +107,8 @@ async function mockedPage(tourSeenValue) {
     const tour = Alpine.store('tour');
     const seen = [tour.current];
     for (let i = 0; i < 5; i++) {
+      if (tour.current === 'today') await tour.askForSmsPermission();
+      if (tour.current === 'settings') await tour.askForNotificationPermission();
       tour.next();
       seen.push(tour.current);
     }
@@ -145,37 +147,39 @@ async function mockedPage(tourSeenValue) {
   await page.close();
 }
 
-// ---- the two permission triggers fire at exactly the right steps, never blocking ----
+// ---- permission prompts resolve in place before the next step -----------
 {
   const page = await mockedPage(false);
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  const order = await page.evaluate(async () => {
-    const calls = [];
-    const el = document.querySelector('[x-data]');
-    // Exercised through the real Alpine magics wired in app.js, same
-    // functions the tour itself calls — isNative() is false in this
-    // sandbox (no Capacitor shell), so these safely no-op, but the point
-    // here is confirming WHEN they're invoked, not the native permission
-    // dialog itself (untestable without a real device, see the report).
-    const origFetch = window.fetch;
+  const permissions = await page.evaluate(async () => {
     const auth = Alpine.store('auth');
     auth.session = { user: { id: 'x' } };
     await auth.reconcile();
     const tour = Alpine.store('tour');
-    // Patch the exported functions indirectly isn't possible from outside
-    // the module without a build hook, so instead this just confirms the
-    // tour reaches each step without throwing, which is what actually
-    // matters for "continues normally rather than blocking".
-    for (let i = 0; i < 5; i++) {
-      tour.next();
-      calls.push(tour.current);
-    }
-    window.fetch = origFetch;
-    return calls;
+    tour.next();
+    await tour.askForSmsPermission();
+    const sms = { status: tour.smsPermissionStatus, step: tour.current };
+    tour.next();
+    tour.next();
+    tour.next();
+    await tour.askForNotificationPermission();
+    return {
+      sms,
+      notification: { status: tour.notificationPermissionStatus, step: tour.current },
+    };
   });
-  check('walking through every step, including the two permission triggers, never throws', errors.length === 0, errors.join(' | '));
-  check('the today and settings steps (the two permission triggers) were both reached', order.includes('today') && order.includes('settings'), JSON.stringify(order));
+  check('awaited permission requests complete without throwing', errors.length === 0, errors.join(' | '));
+  check(
+    'SMS prompt resolves while the Today explanation remains visible',
+    permissions.sms.step === 'today' && permissions.sms.status === 'unavailable',
+    JSON.stringify(permissions.sms)
+  );
+  check(
+    'notification prompt resolves while the Settings explanation remains visible',
+    permissions.notification.step === 'settings' && permissions.notification.status === 'unavailable',
+    JSON.stringify(permissions.notification)
+  );
   await page.close();
 }
 

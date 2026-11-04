@@ -188,6 +188,13 @@ class SmsReceiver : BroadcastReceiver() {
             put("incomeCategory", tx.incomeCategory ?: JSONObject.NULL)
         }
 
+        internal fun notificationKind(type: String): String? = when (type) {
+            "spend" -> "spend"
+            "loan_reminder" -> null
+            "fuliza_repayment", "fuliza_activation", "fuliza_interest" -> "fuliza"
+            else -> "received"
+        }
+
         // Opt-in "Deep SMS reconciliation" only — reads M-Pesa messages
         // already sitting in the inbox since `sinceMs`, so the JS side can
         // compare them against what was actually logged. Requires READ_SMS;
@@ -289,10 +296,11 @@ class SmsReceiver : BroadcastReceiver() {
 
         ensureChannel(context)
         try {
-            when (tx.type) {
+            when (notificationKind(tx.type)) {
                 "spend" -> handleSpendNotification(context, sp, tx)
-                "fuliza_repayment", "fuliza_activation", "fuliza_interest" -> handleFulizaEventNotification(context, sp, tx)
-                else -> handleReceivedNotification(context, sp, tx)
+                "fuliza" -> handleFulizaEventNotification(context, sp, tx)
+                "received" -> handleReceivedNotification(context, sp, tx)
+                null -> Unit
             }
         } catch (e: Exception) {
             // The transaction is already queued above regardless of whether
@@ -325,7 +333,7 @@ class SmsReceiver : BroadcastReceiver() {
         } else if (!overBudget) {
             "Logged $currency ${fmt(tx.amount)} to ${tx.counterparty}. $currency ${fmt(remaining)} left today."
         } else {
-            "$currency ${fmt(tx.amount)} logged. You're $currency ${fmt(-remaining)} over today's limit."
+            "You've gone over today's $currency ${fmt(limit)} budget."
         }
 
         // "importantOnly" mode still logs every spend silently (already done
