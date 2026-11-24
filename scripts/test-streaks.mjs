@@ -25,6 +25,7 @@ const page = await (await browser.newContext({ viewport: { width: 390, height: 8
 page.on('pageerror', (e) => console.log('PAGE ERROR:', e.message));
 
 await page.goto(BASE + '/', { waitUntil: 'networkidle' });
+await page.evaluate(() => Alpine.store('auth').finishTour());
 await page.fill('#limit-input', '500');
 await page.click('button:has-text("Start")');
 await page.waitForSelector('text=Left today');

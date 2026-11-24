@@ -6,11 +6,14 @@ import {
   isNative,
   initNativeBridge,
   pushNotificationPrefs,
-  checkSmsPermission,
   requestSmsPermission,
   requestReadSmsPermission,
   requestNotificationPermission,
-  reconcileInbox,
+  scanSmsInbox,
+  checkAppPermissionState,
+  refreshPermissionState,
+  openAppInfo,
+  getAppInstallInfo,
   nativeReload,
   syncReminders,
   syncWeeklySummary,
@@ -47,14 +50,14 @@ import {
   fetchMyGroupChallenges,
   fetchGroupChallengeDetail,
   subscribeToChallenge,
-  getTourSeen,
-  markTourSeen,
 } from './cloud-sync.js';
 
 window.Alpine = Alpine;
 registerStore(Alpine);
 
 const store = () => Alpine.store('sl');
+const TOUR_VERSION = 3;
+const TOUR_MARKER_KEY = 'savelock:tour-version';
 let monthlyReportCheckPromise = null;
 let monthlyReportCheckQueued = false;
 
@@ -94,6 +97,59 @@ Alpine.magic('toast', () => toast);
 // notification (if any) is expanded in the detail view -- not persisted,
 // closing and reopening the panel always starts back at the list.
 Alpine.store('notif', { open: false, selected: null });
+
+Alpine.store('permissions', {
+  native: isNative(),
+  status: { sms: 'prompt', readSms: 'prompt', notifications: 'prompt' },
+  showCard: false,
+
+  setup() {
+    window.addEventListener('savelock:permission-state', (event) => {
+      this.apply(event.detail);
+    });
+    this.refresh();
+  },
+
+  apply(status) {
+    if (!status) return;
+    this.status = { ...this.status, ...status };
+    const missing = ['readSms', 'sms', 'notifications'].some((key) => this.status[key] !== 'granted');
+    this.showCard = this.native && missing && !Alpine.store('auth').showTour;
+  },
+
+  async refresh() {
+    if (!this.native) return;
+    const state = await refreshPermissionState();
+    if (state) this.apply(state);
+  },
+
+  get currentMissing() {
+    const permission = ['readSms', 'sms', 'notifications'].find((key) => this.status[key] !== 'granted');
+    if (!permission) return null;
+    const labels = { readSms: 'Inbox access', sms: 'SMS detection', notifications: 'Notifications' };
+    return {
+      permission,
+      label: labels[permission],
+      requiresSettings: permission !== 'notifications' && !!this.status[`${permission}RequiresSettings`],
+    };
+  },
+
+  async requestCurrent() {
+    const current = this.currentMissing;
+    if (!current) return;
+    try {
+      if (current.permission === 'readSms') await requestReadSmsPermission();
+      else if (current.permission === 'sms') await requestSmsPermission();
+      else await requestNotificationPermission();
+    } finally {
+      await this.refresh();
+    }
+  },
+
+  async openSettings() {
+    await openAppInfo();
+  },
+});
 
 const MILESTONE_COPY = {
   25: (name) => `Quarter of the way to ${name}. Keep going.`,
@@ -725,6 +781,9 @@ Alpine.data('settingsPage', () => ({
   eraseArmed: false,
   native: isNative(),
   smsPermState: null,
+  scanBusy: false,
+  scanError: '',
+  scanNotice: '',
   newCategory: '',
   renamingCategory: null,
   renameInput: '',
@@ -733,7 +792,12 @@ Alpine.data('settingsPage', () => ({
     const s = store();
     this.limitInput = s.settings.dailyLimit > 0 ? String(s.settings.dailyLimit) : '';
     this.currencyInput = s.settings.currency;
-    if (this.native) this.smsPermState = await checkSmsPermission();
+    if (this.native) {
+      this.smsPermState = await checkAppPermissionState();
+      window.addEventListener('savelock:permission-state', (event) => {
+        this.smsPermState = event.detail;
+      });
+    }
   },
 
   get smsGranted() {
@@ -741,7 +805,7 @@ Alpine.data('settingsPage', () => ({
   },
 
   get smsDenied() {
-    return this.smsPermState?.sms === 'denied';
+    return ['denied', 'settings'].includes(this.smsPermState?.sms);
   },
 
   get reconciliationPermState() {
@@ -751,24 +815,37 @@ Alpine.data('settingsPage', () => ({
   async enableSmsDetection() {
     this.smsPermState = await requestSmsPermission();
     if (this.smsGranted) pushNotificationPrefs(store());
+    await refreshPermissionState();
   },
 
-  toggleDeepReconciliation() {
-    store().setDeepReconciliation(!store().settings.deepReconciliationEnabled);
-    toast('Saved');
+  async scanMessagesNow() {
+    if (this.scanBusy) return;
+    this.scanBusy = true;
+    this.scanError = '';
+    this.scanNotice = '';
+    try {
+      const result = await scanSmsInbox();
+      if (!result) {
+        this.scanNotice = 'Grant inbox access to scan messages.';
+        return;
+      }
+      this.scanNotice = `Found ${result.found} · added ${result.added} · skipped ${result.skipped}`;
+      await refreshPermissionState();
+    } catch (error) {
+      console.error('Could not scan SMS inbox:', error);
+      this.scanError = 'Message scan failed. Check inbox permission and try again.';
+    } finally {
+      this.scanBusy = false;
+    }
   },
 
-  async grantDeepReconciliation() {
-    this.smsPermState = await requestReadSmsPermission();
-    if (this.reconciliationPermState === 'granted') this.checkReconciliationNow();
+  get lastScanLabel() {
+    const time = Number(store().smsReconcile?.lastSuccessfulAt) || 0;
+    return time ? new Date(time).toLocaleString() : 'Not scanned yet';
   },
 
-  async checkReconciliationNow() {
-    const sinceMs = new Date(new Date().setHours(0, 0, 0, 0)).getTime();
-    const transactions = await reconcileInbox(sinceMs);
-    const missed = store().reconcileAgainstInbox(transactions);
-    store().recordReconciliationCheck(missed);
-    toast(missed.length ? `${missed.length} possibly missed` : 'All caught up');
+  replayTour() {
+    Alpine.store('auth').replayTour();
   },
 
   toggleSmsNotifySpend() {
@@ -958,12 +1035,9 @@ Alpine.store('auth', {
   error: '',
   busy: false,
 
-  // True right after the very first successful sign in for a brand new
-  // account, resolved once alongside the reconcile() checks below and
-  // read by the tour store's own onboarding overlay. Only ever meaningful
-  // once stage reaches 'ready' — see the tour overlay's own x-show in
-  // Layout.astro, which waits for that too.
+  // Local install/update version gate, independent from cloud account state.
   showTour: false,
+  tourFingerprint: '',
 
   // True whenever the app must show only the sign-in gate: cloud sync is
   // configured (so an account is possible at all) and we have not yet
@@ -1001,7 +1075,29 @@ Alpine.store('auth', {
     return s.settings.dailyLimit > 0 || s.goals.length > 0 || s.spendLog.length > 0 || s.day.spends.length > 0;
   },
 
+  async prepareTour() {
+    let installInfo = null;
+    try {
+      installInfo = await getAppInstallInfo();
+    } catch (error) {
+      console.error('Could not read app install version for the welcome tour:', error);
+    }
+    this.tourFingerprint = [
+      TOUR_VERSION,
+      installInfo?.versionCode || 'web',
+      installInfo?.lastUpdateTime || 'web',
+    ].join(':');
+    let completed = null;
+    try {
+      completed = localStorage.getItem(TOUR_MARKER_KEY);
+    } catch (error) {
+      console.error('Could not read the local welcome-tour marker:', error);
+    }
+    this.showTour = completed !== this.tourFingerprint;
+  },
+
   async init() {
+    await this.prepareTour();
     if (!this.cloudConfigured) {
       this.stage = 'ready';
       requestMonthlyReportCheck();
@@ -1095,12 +1191,7 @@ Alpine.store('auth', {
 
   async reconcile() {
     const userId = this.session.user.id;
-    // Fetched alongside the existing checks below, purely additive — this
-    // does not change anything about how remoteHasData/localData decide
-    // which stage to land on, only sets showTour for the tour overlay to
-    // read once that stage settles on 'ready'.
-    const [remoteHasData, tourAlreadySeen] = await Promise.all([hasRemoteData(userId), getTourSeen(userId)]);
-    this.showTour = !tourAlreadySeen;
+    const remoteHasData = await hasRemoteData(userId);
     const localData = this.localHasData();
     if (remoteHasData && localData) {
       this.stage = 'reconcile';
@@ -1117,13 +1208,20 @@ Alpine.store('auth', {
     }
   },
 
-  // Called once the tour is actually completed or skipped (see
-  // Alpine.store('tour') below), never just from being shown — closing the
-  // app mid tour leaves tour_seen false, so it picks back up on the next
-  // sign in rather than being lost half finished.
   async finishTour() {
     this.showTour = false;
-    if (this.session) await markTourSeen(this.session.user.id);
+    try {
+      localStorage.setItem(TOUR_MARKER_KEY, this.tourFingerprint || String(TOUR_VERSION));
+    } catch (error) {
+      console.error('Could not save the local welcome-tour marker:', error);
+    }
+    await Alpine.store('permissions').refresh();
+  },
+
+  replayTour() {
+    Alpine.store('tour').step = 0;
+    this.showTour = true;
+    Alpine.store('permissions').showCard = false;
   },
 
   async pullNow() {
@@ -1178,11 +1276,12 @@ Alpine.store('auth', {
 // only handles moving through the steps once it is showing, and the two
 // permission prompts tied to specific steps below. See Layout.astro for
 // the overlay itself.
-const TOUR_STEPS = ['letter', 'today', 'goals', 'report', 'settings', 'groups'];
+const TOUR_STEPS = ['welcome', 'today', 'inbox', 'goals', 'report', 'settings', 'groups', 'badges', 'account'];
 
 Alpine.store('tour', {
   step: 0,
   smsPermissionStatus: null,
+  readPermissionStatus: null,
   notificationPermissionStatus: null,
 
   get current() {
@@ -1201,6 +1300,17 @@ Alpine.store('tour', {
     } catch (error) {
       console.error('Could not request SMS permission during onboarding:', error);
       this.smsPermissionStatus = 'unavailable';
+    }
+  },
+
+  async askForReadSmsPermission() {
+    this.readPermissionStatus = 'requesting';
+    try {
+      const permissions = await requestReadSmsPermission();
+      this.readPermissionStatus = !isNative() ? 'unavailable' : permissions?.readSms === 'granted' ? 'granted' : 'denied';
+    } catch (error) {
+      console.error('Could not request inbox permission during onboarding:', error);
+      this.readPermissionStatus = 'unavailable';
     }
   },
 
@@ -1295,6 +1405,7 @@ Alpine.store('lock', {
 });
 
 Alpine.start();
+Alpine.store('permissions').setup();
 initNativeBridge(store());
 initCloudSync(store());
 function requestMonthlyReportCheck() {

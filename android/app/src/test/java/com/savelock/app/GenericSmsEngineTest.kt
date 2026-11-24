@@ -1,10 +1,21 @@
 package com.savelock.app
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test
 
 class GenericSmsEngineTest {
+    @Test
+    fun smsContentHashIsStableAndIncludesMessageTimestamp() {
+        val first = SmsReceiver.contentHash("EQUITY-BANK", "KES 500 has been credited to your account", 100L)
+        val normalizedSender = SmsReceiver.contentHash("equity bank", "KES 500 has been credited to your account", 100L)
+        val laterMessage = SmsReceiver.contentHash("EQUITY-BANK", "KES 500 has been credited to your account", 101L)
+
+        assertEquals(first, normalizedSender)
+        assertNotEquals(first, laterMessage)
+    }
+
     @Test
     fun parsesSharedClassifierFixtures() {
         val stream = javaClass.classLoader!!.getResourceAsStream("generic-sms-cases.json")

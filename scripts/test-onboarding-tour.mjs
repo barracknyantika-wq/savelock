@@ -2,26 +2,16 @@
 // returning account detection it depends on. Two things are verified
 // separately, for real, not just read through:
 //
-// 1. reconcile()'s wiring: the real, unmodified reconcile() in app.js is
-//    called directly (after manually setting a fake signed in session,
-//    since a real phone OTP round trip needs a live Supabase project this
-//    sandbox does not have), with only the network transport faked via
-//    Playwright route interception so it hits a controlled
-//    tour_seen response instead of a real database. This proves showTour
-//    actually comes out true for a brand new account and false for one
-//    that already saw it, through the real code path, not a
-//    reimplementation of the logic.
-// 2. The tour's own step mechanics (skip from any step, next() walking
-//    through in order, finish() resetting state, and the awaited permission
+// 1. The welcome tour is keyed to the local install/update marker, not to
+//    the Supabase profile: both new and returning accounts see it.
+// 2. The tour's own step mechanics (next() walking through every page,
+//    finish() resetting state, and the awaited permission
 //    prompts resolving into clear states before the user continues — these
 //    need no network at all, so they're driven directly
 //    against the real $store.tour.
 //
-// Requires a running preview server built WITH Supabase env vars set
-// (PUBLIC_SUPABASE_URL/PUBLIC_SUPABASE_ANON_KEY), since the tour only
-// exists at all on a cloud configured build. Run with:
-//   PUBLIC_SUPABASE_URL=... PUBLIC_SUPABASE_ANON_KEY=... npm run build
-//   npm run preview -- --port 4321
+// Requires a running preview server. Run with:
+//   npm run build && npm run preview -- --port 4321
 //   node scripts/test-onboarding-tour.mjs
 
 import { chromium } from 'playwright';
@@ -49,7 +39,7 @@ async function mockedPage(tourSeenValue) {
   return page;
 }
 
-// ---- reconcile() wiring: brand new account (tour_seen false) -------------
+// ---- account state does not control the local install tour ---------------
 {
   const page = await mockedPage(false);
   const result = await page.evaluate(async () => {
@@ -59,14 +49,13 @@ async function mockedPage(tourSeenValue) {
     return { stage: auth.stage, showTour: auth.showTour };
   });
   check(
-    'a brand new account (tour_seen false) reaches ready with showTour true',
+    'a brand new account sees the local welcome tour',
     result.stage === 'ready' && result.showTour === true,
     JSON.stringify(result)
   );
   await page.close();
 }
 
-// ---- reconcile() wiring: returning account (tour_seen true) --------------
 {
   const page = await mockedPage(true);
   const result = await page.evaluate(async () => {
@@ -76,24 +65,26 @@ async function mockedPage(tourSeenValue) {
     return { stage: auth.stage, showTour: auth.showTour };
   });
   check(
-    'a returning account (tour_seen true) reaches ready with showTour false',
-    result.stage === 'ready' && result.showTour === false,
+    'a returning account also sees the local welcome tour after an app update',
+    result.stage === 'ready' && result.showTour === true,
     JSON.stringify(result)
   );
   await page.close();
 }
 
-// ---- tour step mechanics: skip from the very first step ------------------
+// ---- tour step mechanics: finish the welcome tour -------------------------
 {
   const page = await mockedPage(false);
   const result = await page.evaluate(async () => {
     const auth = Alpine.store('auth');
     auth.session = { user: { id: 'x' } };
     await auth.reconcile();
-    Alpine.store('tour').skip();
+    const tour = Alpine.store('tour');
+    for (let i = 0; i < 8; i++) tour.next();
+    await tour.finish();
     return { showTour: auth.showTour, step: Alpine.store('tour').step };
   });
-  check('skipping from the developer letter closes the tour and resets its step', result.showTour === false && result.step === 0, JSON.stringify(result));
+  check('finishing all pages closes the welcome tour and resets its step', result.showTour === false && result.step === 0, JSON.stringify(result));
   await page.close();
 }
 
@@ -106,8 +97,9 @@ async function mockedPage(tourSeenValue) {
     await auth.reconcile();
     const tour = Alpine.store('tour');
     const seen = [tour.current];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 8; i++) {
       if (tour.current === 'today') await tour.askForSmsPermission();
+      if (tour.current === 'inbox') await tour.askForReadSmsPermission();
       if (tour.current === 'settings') await tour.askForNotificationPermission();
       tour.next();
       seen.push(tour.current);
@@ -115,35 +107,31 @@ async function mockedPage(tourSeenValue) {
     return seen;
   });
   check(
-    'the tour walks Today, Goals, Report, Settings, Groups in that exact order',
-    JSON.stringify(steps) === JSON.stringify(['letter', 'today', 'goals', 'report', 'settings', 'groups']),
+    'the tour visits every page and the inbox permission step in order',
+    JSON.stringify(steps) === JSON.stringify(['welcome', 'today', 'inbox', 'goals', 'report', 'settings', 'groups', 'badges', 'account']),
     JSON.stringify(steps)
   );
   await page.close();
 }
 
-// ---- finishing the last step marks tour_seen and closes the overlay ------
+// ---- finishing the last step records the local tour version --------------
 {
   const page = await mockedPage(false);
-  let markCalled = false;
-  await page.route('**/rest/v1/profiles*', async (route) => {
-    if (route.request().method() === 'PATCH') {
-      markCalled = true;
-      return route.fulfill({ status: 204 });
-    }
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ tour_seen: false }) });
-  });
   const result = await page.evaluate(async () => {
     const auth = Alpine.store('auth');
     auth.session = { user: { id: 'x' } };
     await auth.reconcile();
     const tour = Alpine.store('tour');
-    for (let i = 0; i < 5; i++) tour.next();
+    for (let i = 0; i < 8; i++) tour.next();
     await tour.finish();
-    return { showTour: auth.showTour, step: tour.step };
+    return {
+      showTour: auth.showTour,
+      step: tour.step,
+      marker: localStorage.getItem('savelock:tour-version'),
+      fingerprint: auth.tourFingerprint,
+    };
   });
-  check('finishing the tour marks tour_seen on the account and closes the overlay', result.showTour === false && result.step === 0, JSON.stringify(result));
-  check('finishing the tour actually called markTourSeen against the account', markCalled);
+  check('finishing the tour closes it and saves a local version marker', result.showTour === false && result.step === 0 && result.marker === result.fingerprint, JSON.stringify(result));
   await page.close();
 }
 
@@ -161,11 +149,15 @@ async function mockedPage(tourSeenValue) {
     await tour.askForSmsPermission();
     const sms = { status: tour.smsPermissionStatus, step: tour.current };
     tour.next();
+    await tour.askForReadSmsPermission();
+    const inbox = { status: tour.readPermissionStatus, step: tour.current };
+    tour.next();
     tour.next();
     tour.next();
     await tour.askForNotificationPermission();
     return {
       sms,
+      inbox,
       notification: { status: tour.notificationPermissionStatus, step: tour.current },
     };
   });
@@ -174,6 +166,11 @@ async function mockedPage(tourSeenValue) {
     'SMS prompt resolves while the Today explanation remains visible',
     permissions.sms.step === 'today' && permissions.sms.status === 'unavailable',
     JSON.stringify(permissions.sms)
+  );
+  check(
+    'READ_SMS prompt resolves while the inbox explanation remains visible',
+    permissions.inbox.step === 'inbox' && permissions.inbox.status === 'unavailable',
+    JSON.stringify(permissions.inbox)
   );
   check(
     'notification prompt resolves while the Settings explanation remains visible',

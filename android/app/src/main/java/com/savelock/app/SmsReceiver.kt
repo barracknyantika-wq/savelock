@@ -12,13 +12,17 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
 import android.provider.Telephony
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
+import java.security.MessageDigest
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
 /**
  * Declared in AndroidManifest.xml (not registered at runtime), so it keeps
@@ -47,6 +51,9 @@ class SmsReceiver : BroadcastReceiver() {
         const val PREFS = "savelock_native"
         const val KEY_PENDING_QUEUE = "sms_pending_queue"
         const val KEY_PROCESSED_CODES = "sms_processed_codes"
+        const val KEY_PROCESSED_SMS_HASHES = "sms_processed_hashes"
+        const val KEY_PROCESSED_SMS_IDENTITIES = "sms_processed_identities"
+        const val KEY_RECONCILE_LAST_SUCCESS = "sms_reconcile_last_success"
         const val KEY_BUDGET_LIMIT = "budget_daily_limit"
         const val KEY_BUDGET_SPENT = "budget_spent_today"
         const val KEY_BUDGET_CURRENCY = "budget_currency"
@@ -65,6 +72,42 @@ class SmsReceiver : BroadcastReceiver() {
         private fun prefs(context: Context): SharedPreferences =
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+        internal fun contentHash(sender: String?, body: String, receivedAt: Long): String {
+            val input = "${GenericSmsEngine.senderKey(sender)}|$body|$receivedAt"
+            val bytes = MessageDigest.getInstance("SHA-256").digest(input.toByteArray(Charsets.UTF_8))
+            return bytes.joinToString("") { "%02x".format(Locale.US, it) }
+        }
+
+        private fun startOfTodayNairobi(): Long {
+            val calendar = Calendar.getInstance(TimeZone.getTimeZone("Africa/Nairobi"), Locale.US)
+            calendar.set(Calendar.HOUR_OF_DAY, 0)
+            calendar.set(Calendar.MINUTE, 0)
+            calendar.set(Calendar.SECOND, 0)
+            calendar.set(Calendar.MILLISECOND, 0)
+            return calendar.timeInMillis
+        }
+
+        private fun readStringSet(sp: SharedPreferences, key: String): MutableSet<String> {
+            val array = readJsonArray(sp, key)
+            return (0 until array.length()).mapNotNull { array.optString(it, null) }.toMutableSet()
+        }
+
+        private fun writeStringSet(sp: SharedPreferences, key: String, values: Collection<String>, cap: Int) {
+            val trimmed = values.toList().takeLast(cap)
+            sp.edit().putString(key, JSONArray(trimmed).toString()).apply()
+        }
+
+        private fun markSmsProcessed(sp: SharedPreferences, smsId: String?, hash: String) {
+            val hashes = readStringSet(sp, KEY_PROCESSED_SMS_HASHES)
+            hashes.add(hash)
+            writeStringSet(sp, KEY_PROCESSED_SMS_HASHES, hashes, 5000)
+            if (!smsId.isNullOrEmpty()) {
+                val identities = readStringSet(sp, KEY_PROCESSED_SMS_IDENTITIES)
+                identities.add("$smsId:$hash")
+                writeStringSet(sp, KEY_PROCESSED_SMS_IDENTITIES, identities, 5000)
+            }
+        }
+
         // Previously-stored state is parsed defensively: if it's ever not
         // valid JSON (a corrupted write, an odd backup/restore onto a
         // different schema, or any other edge case), this must never crash
@@ -79,6 +122,13 @@ class SmsReceiver : BroadcastReceiver() {
                 sp.edit().putString(key, "[]").apply()
                 JSONArray()
             }
+        }
+
+        private fun trimJsonArray(arr: JSONArray, cap: Int): JSONArray {
+            if (arr.length() <= cap) return arr
+            val trimmed = JSONArray()
+            for (i in (arr.length() - cap) until arr.length()) trimmed.put(arr.get(i))
+            return trimmed
         }
 
         /** Read by the Capacitor plugin bridge when JS drains on launch/resume. */
@@ -167,7 +217,7 @@ class SmsReceiver : BroadcastReceiver() {
             }
         }
 
-        fun toJson(tx: MpesaTransaction): JSONObject = JSONObject().apply {
+        fun toJson(tx: MpesaTransaction, smsId: String? = null, smsContentHash: String? = null): JSONObject = JSONObject().apply {
             put("mpesaCode", tx.mpesaCode)
             put("type", tx.type)
             put("subtype", tx.subtype)
@@ -186,6 +236,8 @@ class SmsReceiver : BroadcastReceiver() {
             put("accountLast4", tx.accountLast4 ?: JSONObject.NULL)
             put("reference", tx.reference ?: JSONObject.NULL)
             put("incomeCategory", tx.incomeCategory ?: JSONObject.NULL)
+            if (smsId != null) put("smsId", smsId)
+            if (smsContentHash != null) put("smsContentHash", smsContentHash)
         }
 
         internal fun notificationKind(type: String): String? = when (type) {
@@ -195,45 +247,96 @@ class SmsReceiver : BroadcastReceiver() {
             else -> "received"
         }
 
-        // Opt-in "Deep SMS reconciliation" only — reads M-Pesa messages
-        // already sitting in the inbox since `sinceMs`, so the JS side can
-        // compare them against what was actually logged. Requires READ_SMS;
-        // callers must have already confirmed that's granted (via the
-        // plugin's normal permission flow) before calling this. Never
-        // throws: any failure just means an empty result, same "log and
-        // continue" stance as the rest of this file.
-        fun reconcileInbox(context: Context, sinceMs: Long): JSONArray {
-            val results = JSONArray()
-            try {
-                val cursor = context.contentResolver.query(
-                    Telephony.Sms.CONTENT_URI,
-                    arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
-                    "${Telephony.Sms.DATE} >= ?",
-                    arrayOf(sinceMs.toString()),
-                    "${Telephony.Sms.DATE} ASC"
-                )
-                cursor?.use { c ->
-                    val addressIdx = c.getColumnIndex(Telephony.Sms.ADDRESS)
-                    val bodyIdx = c.getColumnIndex(Telephony.Sms.BODY)
-                    val dateIdx = c.getColumnIndex(Telephony.Sms.DATE)
-                    if (addressIdx < 0 || bodyIdx < 0 || dateIdx < 0) {
-                        Log.e(TAG, "SMS content provider missing expected columns")
-                        return@use
-                    }
-                    while (c.moveToNext()) {
-                        val address = c.getString(addressIdx)
-                        if (!MpesaParser.isMpesaSender(address)) continue
-                        val body = c.getString(bodyIdx) ?: continue
-                        val date = c.getLong(dateIdx)
-                        val tx = MpesaParser.parse(body, date) ?: continue
-                        results.put(toJson(tx))
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "reconcileInbox failed", e)
+        data class ReconcileResult(
+            val transactions: JSONArray,
+            val found: Int,
+            val added: Int,
+            val skipped: Int,
+            val sinceMs: Long,
+            val completedAt: Long
+        )
+
+        /** Read and classify inbox messages. The successful watermark is the scan start,
+         * so a message arriving during the query is picked up on the next pass. */
+        fun reconcileInbox(context: Context, requestedSinceMs: Long): ReconcileResult {
+            if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+                throw SecurityException("READ_SMS permission not granted")
             }
-            return results
+            val sp = prefs(context)
+            val lastSuccess = sp.getLong(KEY_RECONCILE_LAST_SUCCESS, 0L)
+            val sinceMs = if (lastSuccess > 0) lastSuccess else maxOf(requestedSinceMs, startOfTodayNairobi())
+            val scanStartedAt = System.currentTimeMillis()
+            val results = JSONArray()
+            var found = 0
+            var added = 0
+            Log.i(TAG, "Inbox reconcile started sinceMs=$sinceMs")
+            val cursor = context.contentResolver.query(
+                Telephony.Sms.CONTENT_URI,
+                arrayOf(Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
+                "${Telephony.Sms.DATE} >= ? AND ${Telephony.Sms.TYPE} = ?",
+                arrayOf(sinceMs.toString(), Telephony.Sms.MESSAGE_TYPE_INBOX.toString()),
+                "${Telephony.Sms.DATE} ASC"
+            ) ?: throw IllegalStateException("SMS inbox query returned no cursor")
+
+            cursor.use { c ->
+                val idIdx = c.getColumnIndex(Telephony.Sms._ID)
+                val addressIdx = c.getColumnIndex(Telephony.Sms.ADDRESS)
+                val bodyIdx = c.getColumnIndex(Telephony.Sms.BODY)
+                val dateIdx = c.getColumnIndex(Telephony.Sms.DATE)
+                if (idIdx < 0 || addressIdx < 0 || bodyIdx < 0 || dateIdx < 0) {
+                    throw IllegalStateException("SMS content provider missing expected columns")
+                }
+                while (c.moveToNext()) {
+                    found++
+                    val smsId = c.getLong(idIdx).toString()
+                    val sender = c.getString(addressIdx)
+                    val body = c.getString(bodyIdx) ?: ""
+                    val receivedAt = c.getLong(dateIdx)
+                    Log.d(TAG, "Inbox message found id=$smsId sender=${GenericSmsEngine.senderKey(sender)}")
+                    val tx = GenericSmsEngine.parse(body, sender, receivedAt, readTrustedSenders(sp))
+                        ?: if (MpesaParser.isMpesaSender(sender)) MpesaParser.parse(body, receivedAt) else null
+                    if (tx == null) {
+                        Log.d(TAG, "Inbox message skipped id=$smsId reason=not-transaction")
+                        continue
+                    }
+                    val hash = contentHash(sender, body, receivedAt)
+                    val identity = "$smsId:$hash"
+                    val knownHashes = readStringSet(sp, KEY_PROCESSED_SMS_HASHES)
+                    val knownIdentities = readStringSet(sp, KEY_PROCESSED_SMS_IDENTITIES)
+                    if (hash in knownHashes || identity in knownIdentities) {
+                        Log.d(TAG, "Inbox message skipped id=$smsId reason=duplicate")
+                        continue
+                    }
+                    val legacyCodes = readJsonArray(sp, KEY_PROCESSED_CODES)
+                    val legacyIndex = (0 until legacyCodes.length()).firstOrNull { legacyCodes.optString(it) == tx.mpesaCode }
+                    if (legacyIndex != null) {
+                        val remainingCodes = JSONArray()
+                        for (index in 0 until legacyCodes.length()) {
+                            if (index != legacyIndex) remainingCodes.put(legacyCodes.get(index))
+                        }
+                        sp.edit().putString(KEY_PROCESSED_CODES, remainingCodes.toString()).apply()
+                        markSmsProcessed(sp, smsId, hash)
+                        Log.d(TAG, "Inbox message skipped id=$smsId reason=legacy-broadcast-dedupe")
+                        continue
+                    }
+                    results.put(toJson(tx, smsId, hash))
+                    val pending = readJsonArray(sp, KEY_PENDING_QUEUE)
+                    pending.put(toJson(tx, smsId, hash))
+                    sp.edit().putString(KEY_PENDING_QUEUE, trimJsonArray(pending, QUEUE_CAP).toString()).apply()
+                    markSmsProcessed(sp, smsId, hash)
+                    added++
+                    Log.i(TAG, "Inbox transaction queued id=$smsId type=${tx.type} amount=${tx.amount}")
+                }
+            }
+
+            sp.edit().putLong(KEY_RECONCILE_LAST_SUCCESS, scanStartedAt).apply()
+            val skipped = found - added
+            Log.i(TAG, "Inbox reconcile complete found=$found added=$added skipped=$skipped")
+            return ReconcileResult(results, found, added, skipped, sinceMs, scanStartedAt)
         }
+
+        fun lastReconcileTime(context: Context): Long =
+            prefs(context).getLong(KEY_RECONCILE_LAST_SUCCESS, 0L)
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -260,10 +363,11 @@ class SmsReceiver : BroadcastReceiver() {
         val sender = messages[0].originatingAddress
         val body = messages.joinToString("") { it.messageBody ?: "" }
         val isMpesa = MpesaParser.isMpesaSender(sender)
+        val receivedAt = messages.maxOfOrNull { it.timestampMillis }?.takeIf { it > 0 } ?: System.currentTimeMillis()
         val tx = if (isMpesa) {
-            MpesaParser.parse(body, System.currentTimeMillis())
+            MpesaParser.parse(body, receivedAt)
         } else {
-            GenericSmsEngine.parse(body, sender, System.currentTimeMillis(), readTrustedSenders(prefs(context)))
+            GenericSmsEngine.parse(body, sender, receivedAt, readTrustedSenders(prefs(context)))
         }
         if (tx == null) {
             // Deliberately conservative: an unrecognized/low-confidence format
@@ -278,19 +382,16 @@ class SmsReceiver : BroadcastReceiver() {
         Log.d(TAG, "Parsed SMS: type=${tx.type} subtype=${tx.subtype} tier=${tx.tier ?: "auto"} code=${tx.mpesaCode}")
 
         val sp = prefs(context)
-        val processed = readJsonArray(sp, KEY_PROCESSED_CODES)
-        for (i in 0 until processed.length()) {
-            if (processed.optString(i) == tx.mpesaCode) {
-                Log.d(TAG, "Duplicate mpesaCode ${tx.mpesaCode}, already processed")
-                return // already handled, no double notify
-            }
+        val hash = contentHash(sender, body, receivedAt)
+        val knownHashes = readStringSet(sp, KEY_PROCESSED_SMS_HASHES)
+        if (hash in knownHashes) {
+            Log.d(TAG, "Duplicate SMS content hash=$hash, already processed")
+            return
         }
-        processed.put(tx.mpesaCode)
-        val trimmedProcessed = trimJsonArray(processed, PROCESSED_CAP)
-        sp.edit().putString(KEY_PROCESSED_CODES, trimmedProcessed.toString()).apply()
+        markSmsProcessed(sp, null, hash)
 
         val queue = readJsonArray(sp, KEY_PENDING_QUEUE)
-        queue.put(toJson(tx))
+        queue.put(toJson(tx, null, hash))
         val trimmedQueue = trimJsonArray(queue, QUEUE_CAP)
         sp.edit().putString(KEY_PENDING_QUEUE, trimmedQueue.toString()).apply()
 
@@ -392,13 +493,6 @@ class SmsReceiver : BroadcastReceiver() {
             .setContentIntent(pendingIntent)
             .build()
         NotificationManagerCompat.from(context).notify(mpesaCode.hashCode(), notification)
-    }
-
-    private fun trimJsonArray(arr: JSONArray, cap: Int): JSONArray {
-        if (arr.length() <= cap) return arr
-        val trimmed = JSONArray()
-        for (i in (arr.length() - cap) until arr.length()) trimmed.put(arr.get(i))
-        return trimmed
     }
 
     private fun fmt(n: Double): String {

@@ -120,6 +120,8 @@ function defaultState() {
     // an SMS re-delivered by the OS (or re-drained after a crash) can never
     // be logged twice. Bounded so it can't grow forever.
     processedMpesaCodes: [],
+    processedSmsIdentities: [],
+    smsReconcile: { lastSuccessfulAt: 0, found: 0, added: 0, skipped: 0 },
     // Fuliza repayment/activation/interest events — tracked for visibility
     // only, never counted toward spentToday (repaying or being charged for
     // Fuliza isn't a new expense, it's clearing/servicing a past one).
@@ -159,6 +161,8 @@ function load() {
       goals: Array.isArray(saved.goals) ? saved.goals : [],
       breaks: Array.isArray(saved.breaks) ? saved.breaks : [],
       processedMpesaCodes: Array.isArray(saved.processedMpesaCodes) ? saved.processedMpesaCodes : [],
+      processedSmsIdentities: Array.isArray(saved.processedSmsIdentities) ? saved.processedSmsIdentities : [],
+      smsReconcile: { ...base.smsReconcile, ...(saved.smsReconcile || {}) },
       fulizaEvents: Array.isArray(saved.fulizaEvents) ? saved.fulizaEvents : [],
       notifications: Array.isArray(saved.notifications) ? saved.notifications : [],
       monthlyReports: Array.isArray(saved.monthlyReports) ? saved.monthlyReports : [],
@@ -204,12 +208,14 @@ export function registerStore(Alpine) {
     persist() {
       const {
         version, settings, day, streak, savingsStreak, history, spendLog, incomeLog, loanReminders, goals, breaks, processedMpesaCodes,
+        processedSmsIdentities, smsReconcile,
         fulizaEvents, notifications, monthlyReports, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
       } = this;
       localStorage.setItem(
         KEY,
         JSON.stringify({
           version, settings, day, streak, savingsStreak, history, spendLog, incomeLog, loanReminders, goals, breaks, processedMpesaCodes,
+          processedSmsIdentities, smsReconcile,
           fulizaEvents, notifications, monthlyReports, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
         })
       );
@@ -643,10 +649,22 @@ export function registerStore(Alpine) {
     // ways: one at a time as they arrive while the app is open (native-bridge
     // listens for a plugin event), and in a batch on launch/resume to pick up
     // whatever queued while the app was fully closed. Both paths land here,
-    // so the mpesaCode dedup guards against double-logging either way.
+    // so the SMS fingerprint dedup guards against double-logging either way.
 
     recordNativeTransaction(tx) {
-      if (!tx || !tx.mpesaCode || this.processedMpesaCodes.includes(tx.mpesaCode)) return null;
+      if (!tx || !tx.mpesaCode) return null;
+      const smsIdentity = tx.smsContentHash
+        ? [tx.smsContentHash, tx.smsId ? `${tx.smsId}:${tx.smsContentHash}` : null].filter(Boolean)
+        : [];
+      if (smsIdentity.length) {
+        if (smsIdentity.some((identity) => this.processedSmsIdentities.includes(identity))) return null;
+        this.processedSmsIdentities.push(...smsIdentity);
+        if (this.processedSmsIdentities.length > 5000) {
+          this.processedSmsIdentities = this.processedSmsIdentities.slice(-5000);
+        }
+      } else if (this.processedMpesaCodes.includes(tx.mpesaCode)) {
+        return null;
+      }
       this.processedMpesaCodes.push(tx.mpesaCode);
       if (this.processedMpesaCodes.length > 300) {
         this.processedMpesaCodes = this.processedMpesaCodes.slice(-300);
@@ -959,6 +977,7 @@ export function registerStore(Alpine) {
     exportData() {
       const {
         version, settings, day, streak, savingsStreak, history, spendLog, incomeLog, goals, breaks, processedMpesaCodes,
+        processedSmsIdentities, smsReconcile,
         fulizaEvents, notifications, monthlyReports, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
       } = this;
       return JSON.stringify(
@@ -968,6 +987,7 @@ export function registerStore(Alpine) {
           exportedAt: new Date().toISOString(),
           data: {
             version, settings, day, streak, savingsStreak, history, spendLog, incomeLog, goals, breaks, processedMpesaCodes,
+            processedSmsIdentities, smsReconcile,
             fulizaEvents, notifications, monthlyReports, badges, stats, challenge, challengeHistory, lastReconciliationCheck, reconciliationAlert,
           },
         },

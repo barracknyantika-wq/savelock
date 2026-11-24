@@ -9,7 +9,7 @@ import Layout from '../layouts/Layout.astro';
       <p class="text-sm font-light text-cream-2" x-text="$store.sl.dateLong()"></p>
     </header>
 
-    <!-- Deep SMS reconciliation alert: transactions seen in the inbox but never logged -->
+    <!-- Legacy reconciliation alert remains for any previously stored review items -->
     <section
       x-show="$store.sl.reconciliationAlert.length"
       x-cloak

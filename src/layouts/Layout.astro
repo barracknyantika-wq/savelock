@@ -255,18 +255,13 @@ const tabs = [
     </div>
 
     <!--
-      One time onboarding tour: the developer letter, then a short screen
-      for each real tab in order (Today, Goals, Report, Settings, Groups).
-      Shown exactly once, right after the very first successful sign in
-      for a brand new account — see reconcile() and Alpine.store('tour')
-      in app.js, and migration 0008_onboarding_tour.sql for the account
-      level flag that makes this durable across devices and reinstalls.
-      Skippable at any point; either way it always lands on the normal
-      signed in page underneath once closed.
+      Local install/update welcome and page tour. Its local marker is keyed
+      by TOUR_VERSION and the Android app update timestamp, independent of
+      account sign-in or Supabase.
     -->
     <div
       x-data
-      x-show="$store.auth.stage === 'ready' && $store.auth.showTour"
+      x-show="$store.auth.showTour"
       x-cloak
       class="fixed inset-0 z-[65] overflow-y-auto bg-canvas px-5 py-10"
       role="dialog"
@@ -274,21 +269,13 @@ const tabs = [
       aria-label="Welcome to SaveLock"
     >
       <div class="mx-auto flex min-h-full w-full max-w-md flex-col">
-        <div class="flex justify-end">
-          <button type="button" @click="$store.tour.skip()" class="pressable min-h-11 rounded-full px-3 text-sm font-medium text-cream-2">
-            Skip
-          </button>
-        </div>
-
         <div class="flex flex-1 flex-col justify-center pb-16">
-          <template x-if="$store.tour.current === 'letter'">
+          <template x-if="$store.tour.current === 'welcome'">
             <section class="paper relative rotate-[-0.5deg] p-6">
-              <h1 class="font-display text-xl font-semibold tracking-tight text-ink">A note from the developer</h1>
+              <h1 class="font-display text-xl font-semibold tracking-tight text-ink">Welcome to SaveLock</h1>
               <p class="mt-4 text-base font-light leading-relaxed text-ink-2">
-                Thank you for downloading SaveLock. Welcome, and I would love to hear your reviews and
-                criticism.
+                Hi, thanks for downloading SaveLock. I am the developer, and the app is still under construction, so you may notice rough edges while I keep improving it. I am always open to suggestions and improvements, so tell me what you would like to see. Let me show you around.
               </p>
-              <p class="mt-4 text-base font-light leading-relaxed text-ink-2">Barrack</p>
               <button
                 type="button"
                 @click="$store.tour.next()"
@@ -304,11 +291,14 @@ const tabs = [
               <h1 class="font-display text-xl font-semibold tracking-tight text-ink">Today</h1>
               <p class="mt-3 text-sm font-light leading-relaxed text-ink-2">
                 Set a daily allowance, then watch what is left as you spend. Log something yourself in
-                a tap, or let SaveLock catch it the moment an M Pesa message arrives.
+                a tap, or let SaveLock detect a supported transaction SMS as it arrives.
               </p>
               <p class="mt-3 text-sm font-light leading-relaxed text-ink-2">
                 This needs permission to receive transaction SMS messages on this device, so a spend
                 can be caught without you lifting a finger. Nothing ever leaves your phone.
+              </p>
+              <p class="mt-3 text-sm font-semibold text-ink-2">
+                Allow SMS access so SaveLock can detect supported transaction messages as they arrive.
               </p>
               <p
                 x-show="$store.tour.smsPermissionStatus === 'requesting'"
@@ -344,7 +334,7 @@ const tabs = [
                 @click="$store.tour.askForSmsPermission()"
                 class="pressable mt-6 min-h-12 w-full rounded-xl border border-paper-line font-semibold text-ink"
               >
-                Request SMS access
+                Allow SMS detection
               </button>
               <button
                 x-show="$store.tour.smsPermissionStatus !== null && $store.tour.smsPermissionStatus !== 'requesting'"
@@ -356,6 +346,54 @@ const tabs = [
               </button>
               <button
                 x-show="$store.tour.smsPermissionStatus === 'requesting'"
+                type="button"
+                disabled
+                class="mt-3 min-h-12 w-full rounded-xl bg-ochre/50 font-semibold text-ink"
+              >
+                Waiting…
+              </button>
+            </section>
+          </template>
+
+          <template x-if="$store.tour.current === 'inbox'">
+            <section class="paper relative rotate-[-0.4deg] p-6">
+              <h1 class="font-display text-xl font-semibold tracking-tight text-ink">Catch up on messages</h1>
+              <p class="mt-3 text-sm font-light leading-relaxed text-ink-2">
+                Read-only inbox access lets SaveLock find supported transactions received while the app was closed.
+              </p>
+              <p class="mt-3 text-sm font-semibold text-ink-2">
+                Allow inbox access to reconcile recent transaction messages on this phone.
+              </p>
+              <p x-show="$store.tour.readPermissionStatus === 'requesting'" role="status" class="mt-4 text-sm text-ink-2">
+                Waiting for the inbox permission response…
+              </p>
+              <p x-show="$store.tour.readPermissionStatus === 'granted'" role="status" class="mt-4 rounded-lg bg-ochre/15 px-3 py-2 text-sm text-ink">
+                Inbox access granted. SaveLock is scanning recent messages now.
+              </p>
+              <p x-show="$store.tour.readPermissionStatus === 'denied'" role="status" class="mt-4 rounded-lg bg-brick/10 px-3 py-2 text-sm text-brick">
+                Inbox access was not granted. You can scan messages later from Settings.
+              </p>
+              <p x-show="$store.tour.readPermissionStatus === 'unavailable'" role="status" class="mt-4 text-sm text-ink-2">
+                Inbox scanning is available in the Android app.
+              </p>
+              <button
+                x-show="$store.tour.readPermissionStatus === null"
+                type="button"
+                @click="$store.tour.askForReadSmsPermission()"
+                class="pressable mt-6 min-h-12 w-full rounded-xl border border-paper-line font-semibold text-ink"
+              >
+                Allow inbox access
+              </button>
+              <button
+                x-show="$store.tour.readPermissionStatus !== null && $store.tour.readPermissionStatus !== 'requesting'"
+                type="button"
+                @click="$store.tour.next()"
+                class="pressable mt-3 min-h-12 w-full rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"
+              >
+                Continue
+              </button>
+              <button
+                x-show="$store.tour.readPermissionStatus === 'requesting'"
                 type="button"
                 disabled
                 class="mt-3 min-h-12 w-full rounded-xl bg-ochre/50 font-semibold text-ink"
@@ -410,6 +448,9 @@ const tabs = [
               <p class="mt-3 text-sm font-light leading-relaxed text-ink-2">
                 SaveLock needs notification permission to alert you about detected spending and optional reminders.
                 You can change notification settings any time.
+              </p>
+              <p class="mt-3 text-sm font-semibold text-ink-2">
+                Allow notifications so SaveLock can alert you when a transaction is detected.
               </p>
               <button
                 x-show="$store.tour.notificationPermissionStatus === null"
@@ -467,15 +508,72 @@ const tabs = [
               </p>
               <button
                 type="button"
-                @click="$store.tour.finish()"
+                @click="$store.tour.next()"
                 class="pressable mt-6 min-h-12 w-full rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"
               >
+                Continue
+              </button>
+            </section>
+          </template>
+
+          <template x-if="$store.tour.current === 'badges'">
+            <section class="paper relative rotate-[-0.4deg] p-6">
+              <h1 class="font-display text-xl font-semibold tracking-tight text-ink">Badges &amp; challenges</h1>
+              <p class="mt-3 text-sm font-light leading-relaxed text-ink-2">
+                See earned milestones, your savings progress, and optional weekly challenges.
+              </p>
+              <button type="button" @click="$store.tour.next()" class="pressable mt-6 min-h-12 w-full rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]">
+                Continue
+              </button>
+            </section>
+          </template>
+
+          <template x-if="$store.tour.current === 'account'">
+            <section class="paper relative rotate-[0.4deg] p-6">
+              <h1 class="font-display text-xl font-semibold tracking-tight text-ink">Account &amp; sync</h1>
+              <p class="mt-3 text-sm font-light leading-relaxed text-ink-2">
+                Your account page manages sign-in, cloud sync, and backups. You can also keep using SaveLock locally on this phone.
+              </p>
+              <button type="button" @click="$store.tour.finish()" class="pressable mt-6 min-h-12 w-full rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]">
                 Let's go
               </button>
             </section>
           </template>
         </div>
       </div>
+    </div>
+
+    <div
+      x-data
+      x-show="$store.permissions.showCard && !$store.auth.showTour && $store.auth.stage === 'ready' && !$store.lock.blocked"
+      x-cloak
+      class="fixed inset-0 z-[64] flex items-center justify-center bg-canvas/95 px-5 py-8"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="permission-card-heading"
+    >
+      <section class="paper w-full max-w-sm p-6">
+        <h2 id="permission-card-heading" class="font-display text-xl font-semibold text-ink" x-text="`${$store.permissions.currentMissing?.label || 'App'} permission needed`"></h2>
+        <template x-if="$store.permissions.currentMissing?.requiresSettings">
+          <div class="mt-3 space-y-2 text-sm leading-relaxed text-ink-2">
+            <p>Android is not showing the permission prompt. If this install is restricted:</p>
+            <ol class="list-decimal space-y-1 pl-5">
+              <li>Open SaveLock's App info.</li>
+              <li>Tap the three-dot menu in the top-right.</li>
+              <li>Choose “Allow restricted settings”, then return and grant SMS access.</li>
+            </ol>
+          </div>
+        </template>
+        <p x-show="!$store.permissions.currentMissing?.requiresSettings" class="mt-3 text-sm leading-relaxed text-ink-2">
+          SaveLock needs this permission to detect transaction messages, reconcile missed transactions, or show alerts.
+        </p>
+        <button
+          type="button"
+          @click="$store.permissions.currentMissing?.requiresSettings ? $store.permissions.openSettings() : $store.permissions.requestCurrent()"
+          class="pressable mt-5 min-h-12 w-full rounded-xl bg-ochre font-semibold text-ink shadow-[0_3px_0_rgba(140,100,20,0.55)]"
+          x-text="$store.permissions.currentMissing?.requiresSettings ? 'Open App info' : `Allow ${$store.permissions.currentMissing?.label || 'permission'}`"
+        ></button>
+      </section>
     </div>
 
     <div x-data x-show="!$store.auth.blocked && !$store.lock.blocked" x-cloak>

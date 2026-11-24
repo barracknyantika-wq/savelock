@@ -7,7 +7,7 @@
     "dev": "astro dev",
     "build": "node scripts/generate-icons.mjs && astro build && node scripts/generate-sw.mjs",
     "preview": "astro preview",
-    "test": "node scripts/test-mpesa-parser.mjs && node scripts/test-generic-parser.mjs && node scripts/test-monthly-reports.mjs",
+    "test": "node scripts/test-mpesa-parser.mjs && node scripts/test-generic-parser.mjs && node scripts/test-monthly-reports.mjs && node scripts/test-sms-reconcile-state.mjs",
     "test:e2e": "node scripts/test-feedback-animations.mjs",
     "test:db": "node scripts/test-group-challenges-db.mjs",
     "test:streaks": "node scripts/test-streaks.mjs",

@@ -48,6 +48,7 @@ if (!cloudConfigured) {
     const page = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
     page.on('pageerror', (e) => console.log('PAGE ERROR:', e.message));
     await page.goto(BASE + '/', { waitUntil: 'networkidle' });
+    await page.evaluate(() => Alpine.store('auth').finishTour());
     await page.fill('#limit-input', '500');
     await page.click('button:has-text("Start")');
     await page.waitForSelector('text=Left today');
@@ -76,6 +77,7 @@ if (!cloudConfigured) {
     const page = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
     page.on('pageerror', (e) => console.log('PAGE ERROR:', e.message));
     await page.goto(BASE + '/', { waitUntil: 'networkidle' });
+    await page.evaluate(() => Alpine.store('auth').finishTour());
     await page.fill('#limit-input', '500');
     await page.click('button:has-text("Start")');
     await page.waitForSelector('text=Left today');
@@ -96,28 +98,29 @@ if (!cloudConfigured) {
     await page.close();
   }
 
-  // ---- Streak sprout: visibly different content at 0 vs a real streak -------
+  // ---- Streak ring: progress changes with the current streak ----------------
   {
     const page = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
     page.on('pageerror', (e) => console.log('PAGE ERROR:', e.message));
     await page.goto(BASE + '/', { waitUntil: 'networkidle' });
+    await page.evaluate(() => Alpine.store('auth').finishTour());
     await page.fill('#limit-input', '500');
     await page.click('button:has-text("Start")');
     await page.waitForSelector('text=Left today');
 
-    const sproutHtmlAtZero = await page.locator('[aria-hidden="true"] svg[viewBox^="0 0 40"]').first().innerHTML();
+    const ringHtmlAtZero = await page.locator('svg[aria-hidden="true"][viewBox="0 0 64 64"]').first().innerHTML();
 
     await page.evaluate(() => {
       Alpine.store('sl').streak.count = 7;
     });
     await page.waitForTimeout(50);
-    const sproutHtmlAtSeven = await page.locator('[aria-hidden="true"] svg[viewBox^="0 0 40"]').first().innerHTML();
+    const ringHtmlAtSeven = await page.locator('svg[aria-hidden="true"][viewBox="0 0 64 64"]').first().innerHTML();
 
-    check('the streak sprout redraws with different markup once the streak grows', sproutHtmlAtZero !== sproutHtmlAtSeven);
+    check('the streak ring redraws with different progress once the streak grows', ringHtmlAtZero !== ringHtmlAtSeven);
     check(
-      'reaching the 7-day mark adds the blossom (a distinct visual step, not just more leaves)',
-      sproutHtmlAtSeven.includes('circle') && sproutHtmlAtSeven.length > sproutHtmlAtZero.length,
-      `${sproutHtmlAtZero.length} -> ${sproutHtmlAtSeven.length}`
+      'reaching the 7-day mark completes the progress arc',
+      ringHtmlAtSeven.includes('stroke-dashoffset="0.00"') && ringHtmlAtSeven !== ringHtmlAtZero,
+      `${ringHtmlAtZero.length} -> ${ringHtmlAtSeven.length}`
     );
 
     await page.close();
@@ -129,6 +132,7 @@ if (!cloudConfigured) {
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
     await page.goto(BASE + '/', { waitUntil: 'networkidle' });
+    await page.evaluate(() => Alpine.store('auth').finishTour());
     await page.fill('#limit-input', '500');
     await page.click('button:has-text("Start")');
     await page.waitForSelector('text=Left today');
@@ -153,8 +157,8 @@ if (!cloudConfigured) {
     'the ink blot overlay is actually visible on that list item right after logging',
     'the flash clears itself on its own shortly after',
     'an SMS-detected spend gets the same just-logged flash as a manual one',
-    'the streak sprout redraws with different markup once the streak grows',
-    'reaching the 7-day mark adds the blossom (a distinct visual step, not just more leaves)',
+    'the streak ring redraws with different progress once the streak grows',
+    'reaching the 7-day mark completes the progress arc',
     'calling every haptic tier outside a native shell never throws',
   ]) {
     skip(name, 'requires app content the mandatory sign-in gate blocks on a cloud-configured build');

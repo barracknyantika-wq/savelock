@@ -10,8 +10,16 @@ import { LocalNotifications, Weekday } from '@capacitor/local-notifications';
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 
 const SmsMpesa = registerPlugin('SmsMpesa');
+let activeStore = null;
+let reconcilePromise = null;
 
 export const isNative = () => Capacitor.isNativePlatform();
+
+function notifyPermissionState(state) {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('savelock:permission-state', { detail: state }));
+  }
+}
 
 // ---- haptics --------------------------------------------------------------
 // A no-op everywhere but a native build, same convention as every other
@@ -233,25 +241,32 @@ export function nativeReload() {
 export function initNativeBridge(store) {
   if (!isNative()) return;
 
+  activeStore = store;
   fixNativeLinks();
   drain(store);
+  refreshPermissionState();
   pushBudget(store);
   pushNotificationPrefs(store);
   syncReminders(store);
   syncWeeklySummary(store);
-  checkReconciliation(store);
+  runSmsReconcile().catch(() => {});
 
   window.addEventListener('savelock:persist', () => pushBudget(store));
 
   App.addListener('resume', () => {
     drain(store);
+    refreshPermissionState();
     pushBudget(store);
     syncWeeklySummary(store);
-    checkReconciliation(store);
+    runSmsReconcile().catch(() => {});
   }).catch(() => {});
 
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) drain(store);
+    if (!document.hidden) {
+      drain(store);
+      refreshPermissionState();
+      runSmsReconcile().catch(() => {});
+    }
   });
 }
 
@@ -268,55 +283,132 @@ export async function checkSmsPermission() {
 export async function requestSmsPermission() {
   if (!isNative()) return null;
   try {
-    return await SmsMpesa.requestPermissions({ permissions: ['sms'] });
+    await SmsMpesa.markPermissionRequest({ permission: 'sms' });
+    const result = await SmsMpesa.requestPermissions({ permissions: ['sms'] });
+    await refreshPermissionState();
+    if (result?.sms === 'granted') await runSmsReconcile();
+    return result;
   } catch {
     return null;
   }
 }
 
-// "Deep SMS reconciliation" only — requests just the readSms alias,
-// separately from the core sms/notifications permissions above, so opting
-// into this never re-prompts for (or silently piggybacks on) those.
-// checkSmsPermission() above already reports readSms's state too, since it
-// asks for every declared alias's status in one call.
+// Inbox history access is requested separately from live RECEIVE_SMS access
+// so the welcome tour can explain the purpose before showing its prompt.
 export async function requestReadSmsPermission() {
   if (!isNative()) return null;
   try {
-    return await SmsMpesa.requestPermissions({ permissions: ['readSms'] });
+    await SmsMpesa.markPermissionRequest({ permission: 'readSms' });
+    const result = await SmsMpesa.requestPermissions({ permissions: ['readSms'] });
+    await refreshPermissionState();
+    if (result?.readSms === 'granted') await runSmsReconcile();
+    return result;
   } catch {
     return null;
   }
 }
 
-// Reads M-Pesa messages already in the inbox since `sinceMs`, for comparing
-// against what was actually logged. Requires readSms to already be granted;
-// returns an empty list rather than throwing if it isn't (or anything else
-// goes wrong), consistent with this bridge's "never break the app" stance.
-export async function reconcileInbox(sinceMs) {
-  if (!isNative()) return [];
+export async function checkAppPermissionState() {
+  if (!isNative()) return null;
+  const [sms, notifications] = await Promise.all([
+    SmsMpesa.getSmsPermissionState(),
+    LocalNotifications.checkPermissions(),
+  ]);
+  return { ...sms, notifications: notifications.display };
+}
+
+export async function refreshPermissionState() {
+  if (!isNative()) return null;
   try {
-    const { transactions } = await SmsMpesa.reconcileInbox({ sinceMs });
-    return transactions || [];
-  } catch {
-    return [];
+    const state = await checkAppPermissionState();
+    notifyPermissionState(state);
+    return state;
+  } catch (error) {
+    console.error('Could not check SaveLock permissions:', error);
+    return null;
   }
 }
 
-// Runs the opt-in reconciliation check at most once per calendar day, on
-// app open/resume. There's no true OS-level background scheduling here
-// (that would need a foreground service or WorkManager) — this is a
-// best-effort "checked the next time you open the app each day," not a
-// guaranteed daily background job. Silently does nothing unless the user
-// has both turned the feature on and already granted readSms.
-export async function checkReconciliation(store) {
-  if (!isNative() || !store.settings.deepReconciliationEnabled) return;
-  const now = new Date();
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  if (store.lastReconciliationCheck === today) return;
-  const perms = await checkSmsPermission();
-  if (perms?.readSms !== 'granted') return;
-  const sinceMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const transactions = await reconcileInbox(sinceMs);
-  const missed = store.reconcileAgainstInbox(transactions);
-  store.recordReconciliationCheck(missed);
+export async function openAppInfo() {
+  if (!isNative()) return;
+  try {
+    await SmsMpesa.openAppInfo();
+  } catch (error) {
+    console.error('Could not open SaveLock app settings:', error);
+    throw error;
+  }
+}
+
+export async function getAppInstallInfo() {
+  if (!isNative()) return null;
+  return SmsMpesa.getAppInstallInfo();
+}
+
+function startOfTodayNairobi() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Nairobi',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return Date.parse(`${values.year}-${values.month}-${values.day}T00:00:00+03:00`);
+}
+
+async function runSmsReconcile() {
+  if (!isNative() || !activeStore) return null;
+  if (reconcilePromise) return reconcilePromise;
+  reconcilePromise = (async () => {
+    const permissions = await checkAppPermissionState();
+    if (permissions?.readSms !== 'granted') {
+      LogReconcile('Inbox scan skipped: READ_SMS permission is not granted.');
+      return null;
+    }
+    const sinceMs = Number(activeStore.smsReconcile?.lastSuccessfulAt) || startOfTodayNairobi();
+    LogReconcile(`Inbox scan requested since ${new Date(sinceMs).toISOString()}.`);
+    const result = await SmsMpesa.reconcileInbox({ sinceMs });
+    let added = 0;
+    for (const transaction of result.transactions || []) {
+      const identity = transaction.smsContentHash
+        ? [transaction.smsContentHash, transaction.smsId ? `${transaction.smsId}:${transaction.smsContentHash}` : null].filter(Boolean)
+        : [];
+      const alreadyRecorded = identity.length
+        ? identity.some((value) => activeStore.processedSmsIdentities?.includes(value))
+        : activeStore.processedMpesaCodes?.includes(transaction.mpesaCode);
+      activeStore.recordNativeTransaction(transaction);
+      if (!alreadyRecorded) added++;
+    }
+    activeStore.smsReconcile = {
+      lastSuccessfulAt: Number(result.completedAt) || Date.now(),
+      found: Number(result.found) || 0,
+      added,
+      skipped: Math.max(0, (Number(result.found) || 0) - added),
+    };
+    activeStore.persist();
+    LogReconcile(`Inbox scan finished: found=${activeStore.smsReconcile.found} added=${added} skipped=${activeStore.smsReconcile.skipped}.`);
+    return activeStore.smsReconcile;
+  })().catch((error) => {
+    LogReconcile('Inbox scan failed; the prior successful scan timestamp was retained.', error);
+    throw error;
+  }).finally(() => {
+    reconcilePromise = null;
+  });
+  return reconcilePromise;
+}
+
+function LogReconcile(message, error = null) {
+  if (error) console.error(message, error);
+  else console.info(message);
+}
+
+// Reads SMS since the last successful scan. The native side persists the
+// watermark and message fingerprints so Android broadcasts and inbox rows
+// share the same deduplication boundary.
+export async function reconcileInbox(sinceMs) {
+  if (!isNative()) return { transactions: [], found: 0, added: 0, skipped: 0, completedAt: Date.now() };
+  return SmsMpesa.reconcileInbox({ sinceMs });
+}
+
+export async function scanSmsInbox() {
+  return runSmsReconcile();
 }
