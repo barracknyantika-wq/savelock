@@ -224,6 +224,42 @@ Alpine.data('todayPage', () => ({
 Alpine.data('reportPage', () => ({
   expandedDate: null,
   expandedReportMonth: null,
+  chartMonth: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
+  chartRange: '30d',
+  chartData: null,
+  chartError: '',
+  chartRenderer: null,
+  chartRefreshId: 0,
+
+  init() {
+    this.refreshCharts();
+  },
+
+  async refreshCharts() {
+    const refreshId = ++this.chartRefreshId;
+    this.chartError = '';
+    await this.$nextTick();
+    try {
+      const { buildReportChartData, renderReportCharts } = await import('./report-charts.js');
+      const state = store();
+      const model = buildReportChartData(state, this.chartMonth, this.chartRange);
+      if (refreshId !== this.chartRefreshId) return;
+      this.chartData = model;
+      this.chartRenderer?.destroy();
+      this.chartRenderer = model.hasAnyData
+        ? renderReportCharts({
+          categories: this.$refs.categoryChart,
+          daily: this.$refs.dailyChart,
+          monthly: this.$refs.monthlyChart,
+          incomeExpense: this.$refs.incomeExpenseChart,
+        }, model)
+        : null;
+    } catch (error) {
+      if (refreshId !== this.chartRefreshId) return;
+      console.error('Could not render report charts:', error);
+      this.chartError = 'Charts could not be loaded. Your report data is still available below.';
+    }
+  },
 
   get monthlyReports() {
     return [...store().monthlyReports].reverse();
@@ -271,6 +307,10 @@ Alpine.data('reportPage', () => ({
       const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       return ds === date;
     });
+  },
+
+  get chartRangeLabel() {
+    return this.chartRange === '7d' ? '7 days' : this.chartRange === '6m' ? '6 months' : '30 days';
   },
 }));
 

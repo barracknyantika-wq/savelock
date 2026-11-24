@@ -28,6 +28,7 @@
     "@tailwindcss/vite": "^4.1.0",
     "alpinejs": "^3.14.0",
     "astro": "^5.0.0",
+    "chart.js": "^4.6.1",
     "jspdf": "^4.2.1",
     "shiki": "^3.23.0",
     "tailwindcss": "^4.1.0"

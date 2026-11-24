@@ -1,3 +1,5 @@
+import { isReportableExpense, buildReportChartData } from './report-chart-data.js';
+
 function localDate(value) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return null;
@@ -84,7 +86,7 @@ export async function createMonthlyReport(state, month, user = {}, generatedAt =
 
   for (const spend of [...(state.spendLog || []), ...(state.day?.spends || [])]) {
     const date = localDate(spend.at);
-    if (!date || date.slice(0, 7) !== month || spend.classification === 'savings-transfer' || spend.classification === 'loan_reminder') continue;
+    if (!date || date.slice(0, 7) !== month || !isReportableExpense(spend)) continue;
     transactions.push({
       date,
       description: spend.note || spend.counterparty || 'Spend',
@@ -156,6 +158,7 @@ export async function createMonthlyReport(state, month, user = {}, generatedAt =
       summary,
       streaks,
       transactions,
+      chartData: buildReportChartData(state, month, '6m', generatedAt),
     }),
     emailStatus: 'not-applicable',
     emailError: '',
@@ -239,6 +242,54 @@ export async function renderMonthlyReportPdf(report) {
       doc.text(money(category.total, report.currency), pageWidth - margin, y, { align: 'right' });
       y += 14;
     }
+  }
+
+  if (typeof document !== 'undefined' && report.chartData?.hasExpenses) {
+    const { renderChartToDataUrl } = await import('./report-charts.js');
+    const chartWidth = Math.floor(contentWidth / 2) - 6;
+    const chartHeight = 142;
+    const chartTop = y + 20;
+    if (chartTop + chartHeight + 20 > pageHeight - 48) {
+      doc.addPage();
+      y = 48;
+    } else {
+      y = chartTop;
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.text('Spending charts', margin, y);
+    y += 12;
+
+    const categoryImage = renderChartToDataUrl('doughnut', {
+      labels: report.chartData.categories.labels,
+      datasets: [{
+        data: report.chartData.categories.values,
+        backgroundColor: ['#c9922e', '#71b597', '#7194b5', '#b57c71', '#9c87bd', '#c4b878'],
+        borderColor: '#f4f1ea',
+        borderWidth: 3,
+      }],
+    }, 640, 380, report.currency, {
+      cutout: '58%',
+      plugins: { legend: { position: 'bottom' } },
+      scales: undefined,
+    });
+    const monthlyImage = renderChartToDataUrl('bar', {
+      labels: report.chartData.monthly.labels,
+      datasets: [{
+        label: 'Expenses',
+        data: report.chartData.monthly.values,
+        backgroundColor: '#c9922e',
+        borderRadius: 5,
+      }],
+    }, 640, 380, report.currency, {
+      plugins: { legend: { display: false } },
+    });
+    doc.addImage(categoryImage, 'PNG', margin, y, chartWidth, chartHeight);
+    doc.addImage(monthlyImage, 'PNG', margin + chartWidth + 12, y, chartWidth, chartHeight);
+    y += chartHeight + 16;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(`Six-month spending · ${report.chartData.monthly.changeLabel}`, margin + chartWidth + 12, y - 6);
   }
 
   y += 12;

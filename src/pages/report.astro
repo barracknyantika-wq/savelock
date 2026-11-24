@@ -127,6 +127,98 @@ import Layout from '../layouts/Layout.astro';
       </div>
     </section>
 
+    <section class="mb-10" aria-labelledby="charts-heading">
+      <div class="mb-4 px-1">
+        <h2 id="charts-heading" class="font-display text-lg font-semibold tracking-tight text-cream">Charts</h2>
+        <p class="mt-1 text-sm font-light text-cream-2">A local view of your spending, income, and budget trends.</p>
+      </div>
+
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-charcoal-2 bg-charcoal px-4 py-3">
+        <label class="flex items-center gap-2 text-sm text-cream-2">
+          <span>Month</span>
+          <select
+            x-model="chartMonth"
+            @change="refreshCharts()"
+            class="max-w-40 rounded-lg border border-charcoal-2 bg-canvas px-2 py-1.5 text-sm text-cream"
+            aria-label="Select report month"
+          >
+            <template x-for="option in chartData?.monthOptions || []" :key="option.value">
+              <option :value="option.value" x-text="option.label"></option>
+            </template>
+          </select>
+        </label>
+
+        <div class="flex rounded-lg border border-charcoal-2 p-1" role="group" aria-label="Chart range">
+          <template x-for="option in [{ value: '7d', label: '7 days' }, { value: '30d', label: '30 days' }, { value: '6m', label: '6 months' }]" :key="option.value">
+            <button
+              type="button"
+              class="rounded-md px-2 py-1.5 text-xs font-semibold transition-colors"
+              :class="chartRange === option.value ? 'bg-ochre text-canvas' : 'text-cream-2 hover:text-cream'"
+              :aria-pressed="chartRange === option.value"
+              @click="chartRange = option.value; refreshCharts()"
+              x-text="option.label"
+            ></button>
+          </template>
+        </div>
+      </div>
+
+      <p x-show="chartError" x-cloak class="mb-3 rounded-xl border border-brick/30 bg-brick/10 px-4 py-3 text-sm text-brick-bright" x-text="chartError"></p>
+      <p x-show="chartData && !chartData.hasAnyData" x-cloak class="rounded-2xl border border-dashed border-charcoal-2 px-5 py-6 text-center text-sm leading-relaxed text-cream-2">
+        No classified income or spending to chart yet. Once transactions are recorded, your charts will appear here.
+      </p>
+
+      <div x-show="chartData && chartData.hasExpenses" x-cloak class="space-y-4">
+        <article class="paper-dark p-4">
+          <div class="mb-3">
+            <h3 class="font-display text-base font-semibold text-cream" x-text="`Spending by category · ${chartData?.monthLabel || ''}`"></h3>
+            <p class="text-xs text-cream-2">Classified expenses only</p>
+          </div>
+          <div class="relative h-64 min-w-0">
+            <canvas x-ref="categoryChart" role="img" aria-label="Doughnut chart of spending by category"></canvas>
+          </div>
+        </article>
+
+        <article class="paper-dark p-4">
+          <div class="mb-3">
+            <h3 class="font-display text-base font-semibold text-cream">Daily spending vs budget</h3>
+            <p class="text-xs text-cream-2" x-text="`${chartRangeLabel} · dashed line is the current daily limit`"></p>
+          </div>
+          <div x-show="chartData?.daily?.values?.some(value => value > 0)" class="relative h-56 min-w-0">
+            <canvas x-ref="dailyChart" role="img" aria-label="Line chart of daily spending versus daily budget"></canvas>
+          </div>
+          <p x-show="!chartData?.daily?.values?.some(value => value > 0)" class="py-8 text-center text-sm text-cream-2">No daily expense data for this range.</p>
+        </article>
+
+        <article class="paper-dark p-4">
+          <div class="mb-3 flex items-start justify-between gap-2">
+            <div>
+              <h3 class="font-display text-base font-semibold text-cream">Monthly spending</h3>
+              <p class="text-xs text-cream-2">Six months ending in the selected month</p>
+            </div>
+            <span
+              class="shrink-0 rounded-full px-2 py-1 text-xs font-semibold"
+              :class="chartData?.monthly?.changeDirection === 'down' ? 'bg-emerald-900/40 text-emerald-300' : chartData?.monthly?.changeDirection === 'up' ? 'bg-brick/15 text-brick-bright' : 'bg-ochre/15 text-ochre'"
+              x-text="chartData?.monthly?.changeLabel || ''"
+              aria-label="Spending change compared with the previous month"
+            ></span>
+          </div>
+          <div class="relative h-56 min-w-0">
+            <canvas x-ref="monthlyChart" role="img" aria-label="Bar chart of total spending per month"></canvas>
+          </div>
+        </article>
+      </div>
+
+      <article x-show="chartData && chartData.hasAnyData" x-cloak class="paper-dark mt-4 p-4">
+        <div class="mb-3">
+          <h3 class="font-display text-base font-semibold text-cream">Income vs expenses</h3>
+          <p class="text-xs text-cream-2">Six months ending in the selected month · Ksh</p>
+        </div>
+        <div class="relative h-56 min-w-0">
+          <canvas x-ref="incomeExpenseChart" role="img" aria-label="Grouped bar chart comparing monthly income and expenses"></canvas>
+        </div>
+      </article>
+    </section>
+
     <!-- Empty state -->
     <p
       x-show="!pastDays.length"
